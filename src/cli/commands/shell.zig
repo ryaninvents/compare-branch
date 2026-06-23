@@ -21,7 +21,7 @@ const wrapper =
     \\      fi
     \\      command cb-bin "$@"
     \\      ;;
-    \\    done)
+    \\    'done')
     \\      if [ -n "$CB_REVIEW" ]; then
     \\        command cb-bin review-done $CB_REVIEW && builtin exit
     \\        return $?
