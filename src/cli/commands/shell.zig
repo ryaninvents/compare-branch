@@ -14,7 +14,7 @@ const wrapper =
     \\      __cb_dir="$(command cb-bin cd-path "${@:2}")" || return $?
     \\      builtin cd "$__cb_dir"
     \\      ;;
-    \\    exit)
+    \\    'exit')
     \\      if [ -n "$CB_REVIEW" ]; then
     \\        command cb-bin review-confirm-exit && builtin exit
     \\        return $?
