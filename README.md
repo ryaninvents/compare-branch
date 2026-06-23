@@ -7,6 +7,16 @@ for the full specification this implements.
 
 ## Install
 
+### Homebrew
+
+```sh
+brew install ryaninvents/tap/cb
+```
+
+Then add the shell integration printed by `brew info cb` to your rc file (see below).
+
+### Manual
+
 Download the archive for your platform from the
 [latest release](../../releases/latest), put `cb-bin` on your `PATH`, then add the
 shell integration to your rc file:
