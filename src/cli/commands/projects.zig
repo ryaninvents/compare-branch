@@ -36,10 +36,25 @@ pub fn mkproject(ctx: *app.Context, rest: []const []const u8) !void {
 }
 
 fn resolveDir(ctx: *app.Context, a: *const args.Args, key: []const u8) ![]u8 {
-    if (a.pos(1)) |d| return ctx.gpa.dupe(u8, d);
+    if (a.pos(1)) |d| return absoluteDir(ctx.gpa, d);
     const base = try ctx.config.renderBaseDir(ctx.gpa, ctx.now_unix);
     defer ctx.gpa.free(base);
     return std.fs.path.join(ctx.gpa, &.{ base, key });
+}
+
+// Resolve d to an absolute path. Uses realpath when the path already exists so
+// symlinks and ".." components are canonicalized; falls back to a cwd-join when
+// it doesn't (e.g. a clone target that hasn't been created yet).
+fn absoluteDir(gpa: std.mem.Allocator, d: []const u8) ![]u8 {
+    if (std.fs.path.isAbsolute(d)) return gpa.dupe(u8, d);
+    return std.fs.cwd().realpathAlloc(gpa, d) catch |err| switch (err) {
+        error.FileNotFound => blk: {
+            const cwd = try std.process.getCwdAlloc(gpa);
+            defer gpa.free(cwd);
+            break :blk try std.fs.path.join(gpa, &.{ cwd, d });
+        },
+        else => return err,
+    };
 }
 
 fn ensureCheckout(ctx: *app.Context, dir: []const u8, remote: ?[]const u8) !void {
@@ -53,6 +68,45 @@ fn ensureCheckout(ctx: *app.Context, dir: []const u8, remote: ?[]const u8) !void
     if (!out.ok()) {
         ctx.warn("{s}", .{out.stderr});
         return error.GitFailed;
+    }
+}
+
+pub fn rmproject(ctx: *app.Context, rest: []const []const u8) !void {
+    var a = try args.parse(ctx.gpa, rest, &.{"delete-dir"});
+    defer a.deinit();
+
+    const key = a.pos(0) orelse return error.MissingArgument;
+    const delete_dir = a.flag(&.{"delete-dir"});
+
+    var state = try common.loadState(ctx);
+    defer state.deinit();
+    const project = try common.requireProject(&state, key);
+
+    if (project.worktrees.count() > 0) {
+        ctx.warn("project '{s}' has active worktrees; remove them first\n", .{key});
+        return error.ProjectHasWorktrees;
+    }
+
+    const prompt = try std.fmt.allocPrint(ctx.gpa, "remove project '{s}'?", .{key});
+    defer ctx.gpa.free(prompt);
+    const confirmed = try common.confirm(ctx, prompt);
+    if (!confirmed) return error.Aborted;
+
+    const dir = try ctx.gpa.dupe(u8, project.dir);
+    defer ctx.gpa.free(dir);
+
+    try store.appendEvent(ctx.gpa, ctx.state_path, store.ProjectRemoved{
+        .at = ctx.now_unix,
+        .key = key,
+    });
+
+    if (delete_dir) {
+        std.fs.deleteTreeAbsolute(dir) catch |err| {
+            ctx.warn("warning: could not delete '{s}': {s}\n", .{ dir, @errorName(err) });
+        };
+        ctx.print("removed project '{s}' and deleted {s}\n", .{ key, dir });
+    } else {
+        ctx.print("removed project '{s}'\n", .{key});
     }
 }
 

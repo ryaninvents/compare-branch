@@ -38,6 +38,7 @@ pub const usage =
     \\  cb mk <key> <worktree-key> [-t <ticket>] [--base <branch>] [--branch-name <name>] [-n <note>]
     \\  cb cd <key> [<worktree-key>]
     \\  cb ls [<key>]
+    \\  cb rmproject <key> [--delete-dir]
     \\  cb rm <key> <worktree-key>
     \\  cb review <key> <remote-branch> [-t <ticket>] [-n <note>] [--base <branch>] [--no-merge-base] [--shell]
     \\  cb review-local <key> <dir>
@@ -65,6 +66,7 @@ pub fn run(ctx: *Context, argv: []const []const u8) !u8 {
 
 fn dispatch(ctx: *Context, cmd: []const u8, rest: []const []const u8) !void {
     if (eq(cmd, "mkproject")) return projects.mkproject(ctx, rest);
+    if (eq(cmd, "rmproject")) return projects.rmproject(ctx, rest);
     if (eq(cmd, "ls")) return projects.ls(ctx, rest);
     if (eq(cmd, "mk")) return worktree.mk(ctx, rest);
     if (eq(cmd, "rm")) return worktree.rm(ctx, rest);
@@ -96,6 +98,7 @@ fn errorMessage(err: anyerror) []const u8 {
         error.ProjectNotFound => "no such project",
         error.WorktreeNotFound => "no such worktree",
         error.ProjectExists => "a project with that key already exists",
+        error.ProjectHasWorktrees => "project has active worktrees",
         error.WorktreeExists => "a worktree with that key already exists",
         error.NotAGitRepo => "target directory is not a git repository",
         error.GitFailed => "a git command failed",
