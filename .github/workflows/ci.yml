@@ -1,0 +1,21 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v1
+        with:
+          version: 0.14.1
+      - name: Unit tests
+        run: zig build test
+      - name: End-to-end tests
+        run: zig build e2e
+      - name: Cross-compile all targets
+        run: zig build release
