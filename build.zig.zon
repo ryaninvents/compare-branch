@@ -1,6 +1,6 @@
 .{
     .name = .cb,
-    .version = "0.1.0",
+    .version = "0.2.0",
     // Stable random fingerprint for this package; do not regenerate.
     .fingerprint = 0xacb52aef51eb8a80,
     .minimum_zig_version = "0.14.1",
