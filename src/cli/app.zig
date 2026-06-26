@@ -7,6 +7,7 @@ const worktree = @import("commands/worktree.zig");
 const review = @import("commands/review.zig");
 const shell = @import("commands/shell.zig");
 const config_cmd = @import("commands/config_cmd.zig");
+const complete_cmd = @import("commands/complete.zig");
 
 // Wiring point: holds the resolved dependencies every command needs and routes
 // argv[1] to a handler. Composition (constructing Config/Git/paths) happens in
@@ -78,6 +79,7 @@ fn dispatch(ctx: *Context, cmd: []const u8, rest: []const []const u8) !void {
     if (eq(cmd, "review-done")) return review.reviewDone(ctx, rest);
     if (eq(cmd, "review-confirm-exit")) return review.confirmExit(ctx, rest);
     if (eq(cmd, "init")) return shell.init(ctx, rest);
+    if (eq(cmd, "__complete")) return complete_cmd.complete(ctx, rest);
     if (eq(cmd, "config")) return config_cmd.config(ctx, rest);
     ctx.warn("{s}", .{usage});
     return error.UnknownCommand;

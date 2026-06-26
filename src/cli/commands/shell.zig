@@ -1,46 +1,27 @@
 const std = @import("std");
 const app = @import("../app.zig");
 
-// `cb init <shell>` emits the shell function that fronts the binary. A binary
+// `cb init <shell>` emits the shell integration that fronts the binary. A binary
 // can't change its parent shell's cwd or exit it, so `cd`, and the review-only
-// `exit`/`done`, are handled here; everything else forwards to `cb-bin`. The
-// body is POSIX-ish and works under both bash and zsh.
+// `exit`/`done`, are handled in the shell wrapper; everything else forwards to
+// `cb-bin`. The wrapper files under shell/ are the single source of truth:
+// Homebrew installs them for `source`, and they are embedded here (registered as
+// named imports in build.zig) so the manual `eval "$(cb-bin init zsh)"` path
+// stays byte-for-byte identical with zero drift.
 
-const wrapper =
-    \\cb() {
-    \\  case "$1" in
-    \\    cd)
-    \\      local __cb_dir
-    \\      __cb_dir="$(command cb-bin cd-path "${@:2}")" || return $?
-    \\      builtin cd "$__cb_dir"
-    \\      ;;
-    \\    'exit')
-    \\      if [ -n "$CB_REVIEW" ]; then
-    \\        command cb-bin review-confirm-exit && builtin exit
-    \\        return $?
-    \\      fi
-    \\      command cb-bin "$@"
-    \\      ;;
-    \\    'done')
-    \\      if [ -n "$CB_REVIEW" ]; then
-    \\        command cb-bin review-done $CB_REVIEW && builtin exit
-    \\        return $?
-    \\      fi
-    \\      command cb-bin "$@"
-    \\      ;;
-    \\    *)
-    \\      command cb-bin "$@"
-    \\      ;;
-    \\  esac
-    \\}
-    \\
-;
+const wrapper_zsh = @embedFile("cb_zsh");
+const wrapper_bash = @embedFile("cb_bash");
 
 pub fn init(ctx: *app.Context, rest: []const []const u8) !void {
     const sh = if (rest.len > 0) rest[0] else "";
-    if (!std.mem.eql(u8, sh, "zsh") and !std.mem.eql(u8, sh, "bash")) {
-        ctx.warn("usage: cb init <zsh|bash>\n", .{});
-        return error.MissingArgument;
+    if (std.mem.eql(u8, sh, "zsh")) {
+        ctx.print("{s}", .{wrapper_zsh});
+        return;
     }
-    ctx.print("{s}", .{wrapper});
+    if (std.mem.eql(u8, sh, "bash")) {
+        ctx.print("{s}", .{wrapper_bash});
+        return;
+    }
+    ctx.warn("usage: cb init <zsh|bash>\n", .{});
+    return error.MissingArgument;
 }

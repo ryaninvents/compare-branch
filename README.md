@@ -13,25 +13,41 @@ for the full specification this implements.
 brew install ryaninvents/tap/cb
 ```
 
-Then add the shell integration printed by `brew info cb` to your rc file (see below).
+Then `source` the shell integration from your rc file:
+
+```sh
+# ~/.zshrc
+source "$(brew --prefix)/share/cb/cb.zsh"
+# ~/.bashrc
+source "$(brew --prefix)/share/cb/cb.bash"
+```
+
+Tab-completion (zsh and bash) is installed automatically — for zsh it loads once
+Homebrew's `site-functions` directory is on your `fpath` (the standard Homebrew
+setup), and the `source` line additionally loads the `cb` shell function.
 
 ### Manual
 
 Download the archive for your platform from the
-[latest release](../../releases/latest), put `cb-bin` on your `PATH`, then add the
-shell integration to your rc file:
+[latest release](../../releases/latest) and put `cb-bin` on your `PATH`. The
+archive bundles `shell/` (the wrapper functions) and `completions/`. Source the
+wrapper for your shell:
 
 ```sh
 # ~/.zshrc
-eval "$(cb-bin init zsh)"
+source /path/to/shell/cb.zsh
+fpath=(/path/to/completions $fpath)   # for `cb` tab-completion
 # ~/.bashrc
-eval "$(cb-bin init bash)"
+source /path/to/shell/cb.bash
+source /path/to/completions/cb.bash   # for `cb` tab-completion
 ```
 
-The binary is named `cb-bin`. `eval` defines a shell function named `cb` that
-fronts it — this is required because a binary cannot change its parent shell's
-working directory (`cb cd`) or exit a review shell (`cb exit`/`cb done`). Every
-other subcommand forwards straight to `cb-bin`.
+Without Homebrew you can also generate the wrapper on the fly with
+`eval "$(cb-bin init zsh)"` (or `bash`) — it emits the same function. Either way,
+the wrapper defines a shell function named `cb` that fronts the binary: this is
+required because a binary cannot change its parent shell's working directory
+(`cb cd`) or exit a review shell (`cb exit`/`cb done`). Every other subcommand
+forwards straight to `cb-bin`.
 
 ## Usage
 
@@ -155,5 +171,7 @@ src/
   review/             isolated-GIT_DIR review engine
   git/                git subprocess wrapper
   util/               path sanitization, XDG paths
+shell/                cb() wrapper functions (cb.zsh/cb.bash), embedded + installed
+completions/          zsh (_cb) and bash (cb.bash) tab-completion
 e2e/                  end-to-end review tests
 ```

@@ -9,6 +9,15 @@ const release_targets = [_]std.Target.Query{
     .{ .cpu_arch = .x86_64, .os_tag = .linux, .abi = .musl },
 };
 
+// The shell wrapper files under shell/ live outside the src/ module root, so
+// they are exposed to `@embedFile` by name rather than by relative path. Every
+// compile of main.zig (default exe, release targets, unit tests) must register
+// them or the build fails to resolve the embed.
+fn embedShellAssets(b: *std.Build, module: *std.Build.Module) void {
+    module.addAnonymousImport("cb_zsh", .{ .root_source_file = b.path("shell/cb.zsh") });
+    module.addAnonymousImport("cb_bash", .{ .root_source_file = b.path("shell/cb.bash") });
+}
+
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
@@ -19,6 +28,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    embedShellAssets(b, exe.root_module);
     b.installArtifact(exe);
 
     const run_cmd = b.addRunArtifact(exe);
@@ -37,6 +47,7 @@ pub fn build(b: *std.Build) void {
             .target = resolved,
             .optimize = .ReleaseSafe,
         });
+        embedShellAssets(b, rel_exe.root_module);
         const triple = query.zigTriple(b.allocator) catch @panic("OOM");
         const install = b.addInstallArtifact(rel_exe, .{
             .dest_dir = .{ .override = .{ .custom = b.fmt("release/{s}", .{triple}) } },
@@ -55,6 +66,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    embedShellAssets(b, unit_tests.root_module);
     const run_unit_tests = b.addRunArtifact(unit_tests);
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_unit_tests.step);
