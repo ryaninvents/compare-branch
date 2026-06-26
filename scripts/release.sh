@@ -77,14 +77,21 @@ class Cb < Formula
 
   def install
     bin.install "cb-bin"
+    # Sourced wrapper functions (the cb() shell function) live under share/cb.
+    pkgshare.install "shell/cb.zsh", "shell/cb.bash"
+    # Completion: zsh onto fpath, bash into bash_completion.d.
+    zsh_completion.install "completions/_cb"
+    bash_completion.install "completions/cb.bash" => "cb"
   end
 
   def caveats
     <<~CAVEATS
       cb is driven by a shell function that fronts cb-bin (needed for \`cb cd\`,
-      \`cb exit\`, and \`cb done\`). Add the integration to your shell rc:
-        eval "\$(cb-bin init zsh)"    # ~/.zshrc
-        eval "\$(cb-bin init bash)"   # ~/.bashrc
+      \`cb exit\`, and \`cb done\`). Source the integration from your shell rc:
+        source "#{opt_share}/cb/cb.zsh"    # ~/.zshrc
+        source "#{opt_share}/cb/cb.bash"   # ~/.bashrc
+      Tab-completion is installed automatically (zsh requires Homebrew's
+      site-functions on your fpath; see \`brew completions\`).
     CAVEATS
   end
 
@@ -113,6 +120,9 @@ for dir in "$DIST"/release/*/; do
   cp "$dir/cb-bin" "$pkg/cb-bin"
   cp "$ROOT/README.md" "$pkg/README.md" 2>/dev/null || true
   cp "$ROOT/LICENSE" "$pkg/LICENSE" 2>/dev/null || true
+  # Ship the shell integration + completion scripts the formula installs.
+  cp -R "$ROOT/shell" "$pkg/shell"
+  cp -R "$ROOT/completions" "$pkg/completions"
   tar -C "$STAGE" -czf "$STAGE/$name.tar.gz" "$name"
   rm -rf "$pkg"
 done

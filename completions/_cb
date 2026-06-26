@@ -1,0 +1,76 @@
+#compdef cb cb-bin
+# zsh completion for cb. Subcommands and flags are static (kept in sync with the
+# usage block in src/cli/app.zig); project and worktree keys are resolved at
+# completion time from `cb-bin __complete`, which folds the state log.
+
+# Project keys known to cb.
+_cb_projects() {
+  local -a keys
+  keys=(${(f)"$(command cb-bin __complete projects 2>/dev/null)"})
+  _describe -t projects 'project' keys
+}
+
+# Worktree keys for the project named by the first positional ($1).
+_cb_worktrees() {
+  local -a keys
+  keys=(${(f)"$(command cb-bin __complete worktrees "$1" 2>/dev/null)"})
+  _describe -t worktrees 'worktree' keys
+}
+
+_cb() {
+  local curcontext="$curcontext" state line
+  typeset -A opt_args
+
+  local -a subcommands
+  subcommands=(
+    'mkproject:register a project (adopt a checkout or clone --remote)'
+    'mk:create a branch + worktree'
+    'cd:change to a project checkout or worktree'
+    'ls:list projects, or the worktrees of one'
+    'rmproject:remove a project'
+    'rm:remove a worktree'
+    'review:review a remote branch in a throwaway worktree'
+    'review-local:review a live directory against the base branch'
+    'refresh:pull new upstream changes into a review batch'
+    'review-shell:open a review shell for a worktree'
+    'init:print shell integration (zsh|bash)'
+    'config:show config path or value'
+    'exit:leave a review shell'
+    'done:leave a review shell and delete the worktree'
+  )
+
+  _arguments -C \
+    '1: :->command' \
+    '*:: :->args'
+
+  case "$state" in
+    command)
+      _describe -t commands 'cb command' subcommands
+      ;;
+    args)
+      case "$line[1]" in
+        cd|ls|rm|rmproject|mk|review|review-local|refresh|review-shell)
+          # First arg after these subcommands is a project key.
+          if (( CURRENT == 2 )); then
+            _cb_projects
+          elif (( CURRENT == 3 )); then
+            case "$line[1]" in
+              cd|rm|review-shell|refresh) _cb_worktrees "$line[2]" ;;
+            esac
+          fi
+          ;;
+        init)
+          _values 'shell' zsh bash
+          ;;
+        mkproject)
+          _arguments \
+            '--remote[clone from a git URL]:url:' \
+            '--category[group worktrees under a category]:category:' \
+            '--worktrees[worktrees directory]:path:_files -/'
+          ;;
+      esac
+      ;;
+  esac
+}
+
+_cb "$@"
