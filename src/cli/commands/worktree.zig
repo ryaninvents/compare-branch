@@ -8,7 +8,7 @@ const common = @import("common.zig");
 // `cb cd`/`cd-path` resolves the directory the shell wrapper cd's into.
 
 pub fn mk(ctx: *app.Context, rest: []const []const u8) !void {
-    var a = try args.parse(ctx.gpa, rest, &.{});
+    var a = try args.parse(ctx.gpa, rest, &.{"no-fetch"});
     defer a.deinit();
 
     const proj_key = a.pos(0) orelse return error.MissingArgument;
@@ -21,6 +21,8 @@ pub fn mk(ctx: *app.Context, rest: []const []const u8) !void {
 
     const ticket = a.value(&.{ "t", "ticket" });
     const note = a.value(&.{ "n", "note" });
+
+    if (!a.flag(&.{"no-fetch"})) fetch(ctx, project.dir);
 
     const branch = try resolveBranchName(ctx, &a, wt_key, ticket);
     defer ctx.gpa.free(branch);
@@ -107,7 +109,7 @@ pub fn rm(ctx: *app.Context, rest: []const []const u8) !void {
 }
 
 pub fn cdPath(ctx: *app.Context, rest: []const []const u8) !void {
-    var a = try args.parse(ctx.gpa, rest, &.{});
+    var a = try args.parse(ctx.gpa, rest, &.{"no-fetch"});
     defer a.deinit();
 
     const proj_key = a.pos(0) orelse return error.MissingArgument;
@@ -120,5 +122,16 @@ pub fn cdPath(ctx: *app.Context, rest: []const []const u8) !void {
         ctx.print("{s}\n", .{wt.dir});
         return;
     }
+    // cd-ing to the base checkout: fetch so the local state is current.
+    if (!a.flag(&.{"no-fetch"})) fetch(ctx, project.dir);
     ctx.print("{s}\n", .{project.dir});
+}
+
+fn fetch(ctx: *app.Context, project_dir: []const u8) void {
+    var out = ctx.git.run(project_dir, &.{"fetch"}) catch {
+        ctx.warn("warning: git fetch failed\n", .{});
+        return;
+    };
+    defer out.deinit();
+    if (!out.ok()) ctx.warn("warning: git fetch: {s}", .{out.stderr});
 }
