@@ -109,7 +109,7 @@ pub fn rm(ctx: *app.Context, rest: []const []const u8) !void {
 }
 
 pub fn cdPath(ctx: *app.Context, rest: []const []const u8) !void {
-    var a = try args.parse(ctx.gpa, rest, &.{"no-fetch"});
+    var a = try args.parse(ctx.gpa, rest, &.{ "no-fetch", "no-pull" });
     defer a.deinit();
 
     const proj_key = a.pos(0) orelse return error.MissingArgument;
@@ -117,13 +117,21 @@ pub fn cdPath(ctx: *app.Context, rest: []const []const u8) !void {
     defer state.deinit();
     const project = try common.requireProject(&state, proj_key);
 
+    const no_fetch = a.flag(&.{"no-fetch"});
+
     if (a.pos(1)) |wt_key| {
         const wt = project.worktrees.get(wt_key) orelse return error.WorktreeNotFound;
+        if (!no_fetch) {
+            fetch(ctx, project.dir);
+            reportDivergence(ctx, wt.dir);
+        }
         ctx.print("{s}\n", .{wt.dir});
         return;
     }
-    // cd-ing to the base checkout: fetch so the local state is current.
-    if (!a.flag(&.{"no-fetch"})) fetch(ctx, project.dir);
+    if (!no_fetch) {
+        fetch(ctx, project.dir);
+        if (!a.flag(&.{"no-pull"})) pull(ctx, project.dir);
+    }
     ctx.print("{s}\n", .{project.dir});
 }
 
@@ -134,4 +142,45 @@ fn fetch(ctx: *app.Context, project_dir: []const u8) void {
     };
     defer out.deinit();
     if (!out.ok()) ctx.warn("warning: git fetch: {s}", .{out.stderr});
+}
+
+fn pull(ctx: *app.Context, project_dir: []const u8) void {
+    var out = ctx.git.run(project_dir, &.{"pull"}) catch {
+        ctx.warn("warning: git pull failed\n", .{});
+        return;
+    };
+    defer out.deinit();
+    if (!out.ok()) ctx.warn("warning: git pull: {s}", .{out.stderr});
+}
+
+fn reportDivergence(ctx: *app.Context, wt_dir: []const u8) void {
+    // Bail early if there is no upstream tracking branch for this worktree.
+    var upstream_check = ctx.git.run(wt_dir, &.{ "rev-parse", "--verify", "@{u}" }) catch return;
+    defer upstream_check.deinit();
+    if (!upstream_check.ok()) return;
+
+    // ahead\tbehind relative to upstream.
+    var counts_out = ctx.git.run(wt_dir, &.{ "rev-list", "--left-right", "--count", "HEAD...@{u}" }) catch return;
+    defer counts_out.deinit();
+    if (!counts_out.ok()) return;
+
+    const counts = std.mem.trim(u8, counts_out.stdout, "\n\r");
+    var it = std.mem.splitScalar(u8, counts, '\t');
+    const ahead_str = it.next() orelse return;
+    const behind_str = it.next() orelse return;
+    const ahead = std.fmt.parseInt(usize, ahead_str, 10) catch return;
+    const behind = std.fmt.parseInt(usize, behind_str, 10) catch return;
+    if (ahead == 0 and behind == 0) return;
+
+    var upstream_name_out = ctx.git.run(wt_dir, &.{ "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}" }) catch return;
+    defer upstream_name_out.deinit();
+    const upstream = if (upstream_name_out.ok()) upstream_name_out.line() else "upstream";
+
+    if (ahead > 0 and behind > 0) {
+        ctx.warn("note: {d} ahead, {d} behind {s} (diverged)\n", .{ ahead, behind, upstream });
+    } else if (behind > 0) {
+        ctx.warn("note: {d} behind {s}\n", .{ behind, upstream });
+    } else {
+        ctx.warn("note: {d} ahead of {s}\n", .{ ahead, upstream });
+    }
 }
