@@ -13,12 +13,26 @@ We use a JSON-based template syntax for string interpolation. It's a little clun
   "workDir": [{"var": "HOME"}, "/work"], // "root" directory where all work is presumed to be
   "projects": {
     "baseDir": [{"var": "workDir"}, "/.base"], // parent directory for project checkouts
+    "overrides": {
+      // per-project overrides, keyed by project-key. Currently only `worktrees`
+      // is recognized here, and it *replaces* (does not merge with) the
+      // top-level `worktrees` for that project.
+      "<project-key>": { "worktrees": { "copy": [], "onCreate": [] } }
+    }
   },
   "branches": {
     "name": [{"var": "USER"}, "/", {"date": "YYYYMMDD.HHmmss"}, "/", {"join": {"delimiter": "--", "elements": [{"var": "ticket"},{"var": "worktree-key"}]}}] // this is the default format
+  },
+  "worktrees": {
+    "copy": [], // relative paths copied from the project checkout into a new worktree
+    "onCreate": [] // shell commands run in a new worktree after copy
   }
 }
 ```
+
+`copy` and `onCreate` entries are template-DSL values, evaluated with `projectDir`
+and `worktreeDir` added to the per-invocation context (alongside `ticket` and
+`worktree-key`).
 
 # Filenames
 
@@ -36,7 +50,7 @@ By default, worktrees are created directly in `workDir`. If `--category` is prov
 
 # Creating a new worktree
 ```bash
-cb mk <project-key> <worktree-key> [-t|--ticket <ticket_id>] [--base <branch>] [--branch-name <branch_name>] [-n|--note <note>]
+cb mk <project-key> <worktree-key> [-t|--ticket <ticket_id>] [--base <branch>] [--branch-name <branch_name>] [-n|--note <note>] [--no-hooks]
 ```
 
 Create a new worktree for the given project. The worktree will be identified by the given key.
@@ -47,30 +61,89 @@ By default, a new branch is created from the project's default branch, using the
 
 We always keep a timestamp of when each worktree was created.
 
+After the worktree is created, we run **post-create hooks** from the
+`worktrees` config (see Config format): each `copy` entry is copied from the
+project checkout into the new worktree (a missing source warns, doesn't
+fail; entries resolving outside the worktree are rejected), then each
+`onCreate` command runs via `$SHELL -c` in the new worktree with
+`CB_PROJECT_DIR`/`CB_PROJECT_KEY`/`CB_WORKTREE_DIR`/`CB_WORKTREE_KEY`/
+`CB_BRANCH`/`CB_BASE`/`CB_TICKET` set. A failing `onCreate` command stops the
+remaining hooks but leaves the worktree in place. `--no-hooks` skips both.
+
 # Navigating worktrees
 
 ```bash
 cb cd <project-key> # navigate to a project's main checkout
 cb cd <project-key> <worktree-key> # navigate to a given worktree
+cb cd # navigate to the project checkout for the worktree containing $PWD
+cb cd <project-key> -i # interactively pick a worktree (fzf, or a numbered prompt)
+cb cd -i # interactively pick a project, then a worktree
 ```
 
 # Listing projects and worktrees
 
 ```bash
-cb ls # list all projects
-cb ls <project-key> # list worktrees for the given project
+cb ls # list all projects, with each project's worktree count
+cb ls <project-key> # list worktrees for the given project: branch, age, and status
+cb ls [<project-key>] --json # emit the full records as JSON
+cb ls <project-key> --no-status # skip the status column's extra git calls
 ```
+
+The status column (per worktree) shows `*` when dirty and `+N`/`-N` for
+commits ahead/behind the upstream tracking branch.
 
 # Destroying worktrees
 
 ```bash
-cb rm <project-key> <worktree-key>
+cb rm <project-key> <worktree-key> [--force]
+cb rm # remove the worktree containing $PWD (both args must be given together, or omitted together)
+cb rm -i # interactively pick a worktree to remove (project key optional, same as cd -i)
 ```
+
+Before removing, `cb rm` refuses (printing an itemized summary) if the
+worktree has uncommitted/untracked changes or commits not yet pushed
+upstream; `--force` bypasses this. Review worktrees are exempt, since
+they're throwaway by construction.
+
+# Identifying the current worktree
+
+```bash
+cb whereami
+```
+
+Reports the project, worktree, kind, branch, path, base, and any ticket/note
+for the directory containing `$PWD`, using the same longest-prefix match
+that powers the omitted-argument forms above. Outside any registered
+project/worktree it errors; if `$PWD` somehow matches two registered
+directories at the same depth, it refuses to guess and errors instead.
+
+# Reconciling state with reality
+
+```bash
+cb doctor [<project-key>] [--fix]
+```
+
+The state log is the only source of truth for what `cb` believes exists, and
+it can drift from reality — a worktree removed with plain `git worktree
+remove`, a directory deleted by hand, a worktree created outside `cb`.
+`doctor` cross-references the state log against `git worktree list` and the
+filesystem and reports:
+
+- **ghost** worktrees — recorded in state, but gone from git/disk.
+- **orphan** worktrees — a real git worktree under the project that state
+  doesn't know about.
+
+Read-only by default. `--fix` appends corrective events (a removal for each
+ghost, an adoption for each orphan) — consistent with the append-only log,
+this never rewrites existing lines. Review worktrees aren't real git
+worktrees (they use an isolated `GIT_DIR`, see Reviews below), so they're
+only checked for existence on disk, never compared against `git worktree
+list`.
 
 # Reviews
 
 ```bash
-cb review <project-key> <remote-branch-name> [-t|--ticket <ticket_id>] [-n|--note <note>] [--base <branch>] [--shell]
+cb review <project-key> <remote-branch-name | PR-number | PR-URL> [-t|--ticket <ticket_id>] [-n|--note <note>] [--base <branch>] [--shell]
 ```
 
 Creates a "review worktree". This is the same as a regular worktree, except with a couple of additional features pertaining to reviews. See <https://github.com/ryaninvents/rapid-review> for a Bash implementation of the review workflow. We're not copying rapid-review, but we're using the same `--git-dir` mechanism to allow the user to review code incrementally.
@@ -81,6 +154,21 @@ We always store the metadata attached to the given review.
 
 When `--shell` is passed, we immediately open the review shell (described below)
 
+## Reviewing a pull request
+
+A bare number, or a URL containing `/pull/<n>`, is resolved as a pull
+request via `gh pr view` (the GitHub CLI, must be installed and
+authenticated) rather than treated as a branch name directly. No
+`--repo`/`--hostname` override is passed — `gh` infers the target host from
+the project's git remote, so this covers GitHub Enterprise the same way it
+covers github.com, given a prior `gh auth login --hostname <host>`. The
+resolved head branch is then reviewed exactly as if it had been passed
+directly. The worktree key becomes `pr-<number>`, and the PR's title/author
+are recorded and shown by `cb ls`/`cb whereami`. Missing `gh` errors clearly;
+plain branch reviews are unaffected. A fork PR (no `origin/<branch>` to
+compare against locally) errors with a pointer to fetching
+`refs/pull/<n>/head` manually and reviewing that branch by name instead.
+
 ```bash
 cb review-local <project-key> <dir>
 ```
@@ -89,15 +177,17 @@ Creates a "local review worktree", typically used to review AI output. Compares 
 
 ```bash
 cb refresh <project-key> <worktree-key>
+cb refresh # inside a review shell: from CB_REVIEW; otherwise: the worktree containing $PWD
 ```
 
 Loads new changes into the review batch (see "rapid-review" for more on this concept). For a remote review, fetches latest from the review branch. For a local/AI review, checks the target working directory for new changes.
 
 ```bash
 cb review-shell <project-key> <worktree-key>
+cb review-shell [<project-key>] -i
 ```
 
-Opens a "review shell" in the given worktree. This functions the same as the "rapid-review" utility linked above.
+Opens a "review shell" in the given worktree. This functions the same as the "rapid-review" utility linked above. `-i` picks interactively among review/local-review worktrees only (project key optional, same lookup as `cb cd -i`).
 
 ## Special review-only commands
 

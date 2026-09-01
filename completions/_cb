@@ -29,7 +29,7 @@ _cb() {
     'ls:list projects, or the worktrees of one'
     'rmproject:remove a project'
     'rm:remove a worktree'
-    'review:review a remote branch in a throwaway worktree'
+    'review:review a remote branch, PR number, or PR URL in a throwaway worktree'
     'review-local:review a live directory against the base branch'
     'refresh:pull new upstream changes into a review batch'
     'review-shell:open a review shell for a worktree'

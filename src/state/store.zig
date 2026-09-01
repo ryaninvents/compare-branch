@@ -27,7 +27,7 @@ pub fn appendEvent(allocator: std.mem.Allocator, path: []const u8, event: anytyp
 // --- Event payloads (also define the on-disk field names) ---
 
 pub const ProjectCreated = struct {
-    @"type": []const u8 = "project_created",
+    type: []const u8 = "project_created",
     at: i64,
     key: []const u8,
     dir: []const u8,
@@ -37,13 +37,13 @@ pub const ProjectCreated = struct {
 };
 
 pub const ProjectRemoved = struct {
-    @"type": []const u8 = "project_removed",
+    type: []const u8 = "project_removed",
     at: i64,
     key: []const u8,
 };
 
 pub const WorktreeCreated = struct {
-    @"type": []const u8 = "worktree_created",
+    type: []const u8 = "worktree_created",
     at: i64,
     project: []const u8,
     key: []const u8,
@@ -61,14 +61,14 @@ pub const WorktreeCreated = struct {
 };
 
 pub const WorktreeRemoved = struct {
-    @"type": []const u8 = "worktree_removed",
+    type: []const u8 = "worktree_removed",
     at: i64,
     project: []const u8,
     key: []const u8,
 };
 
 pub const ReviewRefreshed = struct {
-    @"type": []const u8 = "review_refreshed",
+    type: []const u8 = "review_refreshed",
     at: i64,
     project: []const u8,
     key: []const u8,

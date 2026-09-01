@@ -191,7 +191,6 @@ pub fn cdPath(ctx: *app.Context, rest: []const []const u8) !void {
     ctx.print("{s}\n", .{project.dir});
 }
 
-
 fn fetch(ctx: *app.Context, project_dir: []const u8) void {
     var out = ctx.git.run(project_dir, &.{"fetch"}) catch {
         ctx.warn("warning: git fetch failed\n", .{});
