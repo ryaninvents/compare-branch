@@ -54,15 +54,15 @@ forwards straight to `cb-bin`.
 ```sh
 cb mkproject <key> [<dir>] [--remote <url>] [--category <cat>] [--worktrees <path>]
 cb mk <key> <worktree-key> [-t <ticket>] [--base <branch>] [--branch-name <name>] [-n <note>]
-cb cd <key> [<worktree-key>]
+cb cd [<key> [<worktree-key>]]
 cb ls [<key>]
-cb rm <key> <worktree-key>
+cb rm [<key> <worktree-key>]
 
 # review flow
 cb review <key> <remote-branch> [-t <ticket>] [-n <note>] [--base <branch>] [--no-merge-base] [--shell]
 cb review-local <key> <dir>
 cb review-shell <key> <worktree-key>
-cb refresh [<key> <worktree-key>]   # no args inside a review shell
+cb refresh [<key> <worktree-key>]   # no args inside a review shell, or inferred from $PWD
 
 cb whereami
 cb init <zsh|bash>
@@ -74,7 +74,11 @@ cb config [path]
 - **`mk`** creates a branch + worktree. The branch name defaults to the
   `branches.name` template (overridable with `--branch-name`); the base defaults to
   the project's default branch.
-- **`cd`** prints/changes to a project checkout or one of its worktrees.
+- **`cd`** prints/changes to a project checkout or one of its worktrees. With no
+  args, it goes to the project checkout for the worktree containing `$PWD`.
+- **`rm`** with no args infers the worktree containing `$PWD` (both `<key>` and
+  `<worktree-key>` must be given together, or omitted together). `refresh` does
+  the same outside a review shell.
 - **`whereami`** reports the project, worktree, branch, and base for the current
   directory — inferred by matching `$PWD` against every registered project and
   worktree dir. Outside any registered tree it errors; if two registered dirs

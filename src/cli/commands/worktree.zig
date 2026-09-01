@@ -87,11 +87,13 @@ pub fn rm(ctx: *app.Context, rest: []const []const u8) !void {
     var a = try args.parse(ctx.gpa, rest, &.{"force"});
     defer a.deinit();
 
-    const proj_key = a.pos(0) orelse return error.MissingArgument;
-    const wt_key = a.pos(1) orelse return error.MissingArgument;
-
     var state = try common.loadState(ctx);
     defer state.deinit();
+
+    const ref = try common.resolveRef(ctx, &state, &a);
+    const proj_key = ref.project;
+    const wt_key = ref.key;
+
     const project = try common.requireProject(&state, proj_key);
     const wt = project.worktrees.get(wt_key) orelse return error.WorktreeNotFound;
 
@@ -118,9 +120,9 @@ pub fn cdPath(ctx: *app.Context, rest: []const []const u8) !void {
     var a = try args.parse(ctx.gpa, rest, &.{ "no-fetch", "no-pull" });
     defer a.deinit();
 
-    const proj_key = a.pos(0) orelse return error.MissingArgument;
     var state = try common.loadState(ctx);
     defer state.deinit();
+    const proj_key = try common.resolveProjectKey(ctx, &state, &a);
     const project = try common.requireProject(&state, proj_key);
 
     const no_fetch = a.flag(&.{"no-fetch"});

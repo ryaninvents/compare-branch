@@ -38,10 +38,10 @@ pub const usage =
     \\Usage:
     \\  cb mkproject <key> [<dir>] [--remote <url>] [--category <cat>] [--worktrees <path>]
     \\  cb mk <key> <worktree-key> [-t <ticket>] [--base <branch>] [--branch-name <name>] [-n <note>] [--no-cd] [--no-fetch]
-    \\  cb cd <key> [<worktree-key>] [--no-fetch] [--no-pull]
+    \\  cb cd [<key> [<worktree-key>]] [--no-fetch] [--no-pull]
     \\  cb ls [<key>]
     \\  cb rmproject <key> [--delete-dir]
-    \\  cb rm <key> <worktree-key>
+    \\  cb rm [<key> <worktree-key>] [--force]
     \\  cb review <key> <remote-branch> [-t <ticket>] [-n <note>] [--base <branch>] [--no-merge-base] [--shell]
     \\  cb review-local <key> <dir>
     \\  cb refresh [<key> <worktree-key>]

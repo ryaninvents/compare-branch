@@ -115,11 +115,12 @@ pub fn refresh(ctx: *app.Context, rest: []const []const u8) !void {
     var a = try args.parse(ctx.gpa, rest, &.{});
     defer a.deinit();
 
-    const ref = try resolveReviewRef(ctx, &a);
-    defer ref.deinit(ctx);
-
     var state = try common.loadState(ctx);
     defer state.deinit();
+
+    const ref = try resolveReviewRef(ctx, &state, &a);
+    defer ref.deinit(ctx);
+
     const project = try common.requireProject(&state, ref.project);
     const wt = project.worktrees.get(ref.key) orelse return error.WorktreeNotFound;
 
@@ -209,19 +210,26 @@ const ReviewRef = struct {
 };
 
 /// In a review shell `cb refresh` takes no args; recover the target from the
-/// CB_REVIEW="<project> <key>" env set when the shell was spawned.
-fn resolveReviewRef(ctx: *app.Context, a: *const args.Args) !ReviewRef {
+/// CB_REVIEW="<project> <key>" env set when the shell was spawned. Outside a
+/// review shell with no args, fall back to inferring the worktree containing
+/// the current directory (common.resolveRef) — the env check goes first since
+/// it's an exact match rather than a path-prefix guess.
+fn resolveReviewRef(ctx: *app.Context, state: *model.State, a: *const args.Args) !ReviewRef {
     if (a.pos(0)) |p| {
         if (a.pos(1)) |k| return .{ .project = p, .key = k, .owned = false };
     }
-    const env = std.process.getEnvVarOwned(ctx.gpa, "CB_REVIEW") catch return error.MissingArgument;
-    defer ctx.gpa.free(env);
-    const sp = std.mem.indexOfScalar(u8, env, ' ') orelse return error.MissingArgument;
-    return .{
-        .project = try ctx.gpa.dupe(u8, env[0..sp]),
-        .key = try ctx.gpa.dupe(u8, env[sp + 1 ..]),
-        .owned = true,
-    };
+    if (std.process.getEnvVarOwned(ctx.gpa, "CB_REVIEW")) |env| {
+        defer ctx.gpa.free(env);
+        if (std.mem.indexOfScalar(u8, env, ' ')) |sp| {
+            return .{
+                .project = try ctx.gpa.dupe(u8, env[0..sp]),
+                .key = try ctx.gpa.dupe(u8, env[sp + 1 ..]),
+                .owned = true,
+            };
+        }
+    } else |_| {}
+    const ref = try common.resolveRef(ctx, state, a);
+    return .{ .project = ref.project, .key = ref.key, .owned = false };
 }
 
 fn spawnReviewShell(ctx: *app.Context, proj: []const u8, key: []const u8, work_tree: []const u8, git_dir: []const u8) !void {

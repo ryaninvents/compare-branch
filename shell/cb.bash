@@ -57,6 +57,10 @@ cb() {
       local __cb_rm_dir=''
       if [ -n "$__cb_rm_proj" ] && [ -n "$__cb_rm_wt" ]; then
         __cb_rm_dir="$(command cb-bin cd-path --no-fetch "$__cb_rm_proj" "$__cb_rm_wt" 2>/dev/null)"
+      elif [ -z "$__cb_rm_proj" ] && [ -z "$__cb_rm_wt" ]; then
+        # No explicit args: cb-bin infers the worktree from $PWD, so escape
+        # from $PWD itself rather than pre-resolving a dir.
+        __cb_rm_dir="$PWD"
       fi
       command cb-bin rm "${@:2}" || return $?
       if [ -n "$__cb_rm_dir" ]; then
