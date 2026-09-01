@@ -56,6 +56,9 @@ jobs:
       - name: Build binaries and cut release
         env:
           GH_TOKEN: ${{ github.token }}
-          # PAT/App token with contents:write on the tap repo; github.token can't push cross-repo.
+          # PAT/App token that can dispatch workflows on the tap repo
+          # (actions: write scope; classic PAT: "workflow"). The tap's own
+          # update-formula workflow does the actual commit with its own
+          # token, so this no longer needs contents:write there.
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: bash scripts/release.sh "${{ steps.version.outputs.tag }}"

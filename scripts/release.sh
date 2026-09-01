@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Build release binaries in the pinned-Zig Docker image, package them, and cut a
 # GitHub release. Manually triggered — locally (`scripts/release.sh v0.1.0`) or
-# via the release workflow. Requires docker (with BuildKit) and an authenticated
-# gh CLI (GH_TOKEN / GITHUB_TOKEN in CI).
+# via the release workflow. Requires docker (with BuildKit), node (for the
+# formula template), and an authenticated gh CLI (GH_TOKEN / GITHUB_TOKEN in CI).
 set -euo pipefail
 
 TAG="${1:-}"
@@ -14,7 +14,7 @@ DIST="$ROOT/dist"
 STAGE="$DIST/assets"
 rm -rf "$DIST"; mkdir -p "$STAGE"
 
-# Where the Homebrew formula is published. Set CB_SKIP_TAP=1 to skip the bump.
+# Where the Homebrew formula is published. Set CB_SKIP_TAP=1 to skip the update.
 REPO="ryaninvents/compare-branch"
 TAP="${CB_HOMEBREW_TAP:-ryaninvents/homebrew-tap}"
 
@@ -32,86 +32,30 @@ friendly() {
 # Look up a packaged asset's sha256 from the generated SHA256SUMS by friendly name.
 sha_for() { awk -v f="-$1.tar.gz" 'index($2, f) { print $1 }' "$STAGE/SHA256SUMS"; }
 
-# Render Formula/cb.rb from the freshly-built assets and push it to the tap.
-# The default GITHUB_TOKEN cannot write to a different repo, so CI must provide
-# HOMEBREW_TAP_TOKEN (a PAT/App token with contents:write on the tap).
-publish_formula() {
-  local version="${TAG#v}"
-  local url_base="https://github.com/${REPO}/releases/download/${TAG}"
-  local work="$DIST/tap"
-  local remote="https://github.com/${TAP}.git"
-  [ -n "${HOMEBREW_TAP_TOKEN:-}" ] && remote="https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/${TAP}.git"
+# Render scripts/formula/cb.rb.ejs against this release's assets into
+# $STAGE/cb.rb. It's attached to the GitHub release below, not pushed to the
+# tap directly — ryaninvents/homebrew-tap's own update-formula workflow pulls
+# it from there (see trigger_tap_update).
+render_formula() {
+  CB_FORMULA_REPO="$REPO" \
+  CB_FORMULA_TAG="$TAG" \
+  CB_FORMULA_VERSION="${TAG#v}" \
+  CB_FORMULA_SHA_MACOS_ARM64="$(sha_for macos-arm64)" \
+  CB_FORMULA_SHA_MACOS_X86_64="$(sha_for macos-x86_64)" \
+  CB_FORMULA_SHA_LINUX_ARM64="$(sha_for linux-arm64)" \
+  CB_FORMULA_SHA_LINUX_X86_64="$(sha_for linux-x86_64)" \
+    node "$ROOT/scripts/render-formula.mjs" > "$STAGE/cb.rb"
+}
 
-  git clone --depth 1 "$remote" "$work"
-  mkdir -p "$work/Formula"
-  cat > "$work/Formula/cb.rb" <<EOF
-class Cb < Formula
-  desc "Disposable git worktree manager"
-  homepage "https://github.com/${REPO}"
-  version "${version}"
-  license "MIT"
-
-  depends_on "git"
-
-  on_macos do
-    on_arm do
-      url "${url_base}/cb-${TAG}-macos-arm64.tar.gz"
-      sha256 "$(sha_for macos-arm64)"
-    end
-    on_intel do
-      url "${url_base}/cb-${TAG}-macos-x86_64.tar.gz"
-      sha256 "$(sha_for macos-x86_64)"
-    end
-  end
-
-  on_linux do
-    on_arm do
-      url "${url_base}/cb-${TAG}-linux-arm64.tar.gz"
-      sha256 "$(sha_for linux-arm64)"
-    end
-    on_intel do
-      url "${url_base}/cb-${TAG}-linux-x86_64.tar.gz"
-      sha256 "$(sha_for linux-x86_64)"
-    end
-  end
-
-  def install
-    bin.install "cb-bin"
-    # Sourced wrapper functions (the cb() shell function) live under share/cb.
-    pkgshare.install "shell/cb.zsh", "shell/cb.bash"
-    # Completion: zsh onto fpath, bash into bash_completion.d.
-    zsh_completion.install "completions/_cb"
-    bash_completion.install "completions/cb.bash" => "cb"
-    # Man pages. Homebrew puts share/man on MANPATH automatically, so `man cb`
-    # works with no extra setup — unlike shell integration, this needs no
-    # caveat.
-    man1.install "man/cb.1"
-    man5.install "man/cb-config.5"
-    man7.install "man/cb-review.7"
-  end
-
-  def caveats
-    <<~CAVEATS
-      cb is driven by a shell function that fronts cb-bin (needed for \`cb cd\`,
-      \`cb exit\`, and \`cb done\`). Source the integration from your shell rc:
-        source "#{opt_share}/cb/cb.zsh"    # ~/.zshrc
-        source "#{opt_share}/cb/cb.bash"   # ~/.bashrc
-      Tab-completion is installed automatically (zsh requires Homebrew's
-      site-functions on your fpath; see \`brew completions\`).
-    CAVEATS
-  end
-
-  test do
-    assert_match "cb", shell_output("#{bin}/cb-bin init zsh")
-  end
-end
-EOF
-
-  git -C "$work" add Formula/cb.rb
-  git -C "$work" -c user.name="${GIT_AUTHOR_NAME:-cb release bot}" \
-    -c user.email="${GIT_AUTHOR_EMAIL:-noreply@github.com}" \
-    commit -m "cb ${TAG}"
-  git -C "$work" push "$remote" HEAD
+# Ask the tap repo's own workflow to fetch this release's cb.rb asset and
+# commit it. The default GITHUB_TOKEN can't dispatch workflows in a different
+# repo, so CI must provide HOMEBREW_TAP_TOKEN (a PAT/App token with the
+# `actions: write` — classic PAT: `workflow` — scope on the tap repo; it no
+# longer needs to write repo contents, since the tap's own workflow does that
+# with its own token).
+trigger_tap_update() {
+  GH_TOKEN="${HOMEBREW_TAP_TOKEN:?HOMEBREW_TAP_TOKEN is required to trigger the tap update}" \
+    gh workflow run update-formula.yml --repo "$TAP" -f project=compare-branch
 }
 
 echo ">> building binaries in Docker (pinned Zig)"
@@ -137,17 +81,20 @@ done
 
 ( cd "$STAGE" && shasum -a 256 ./*.tar.gz > SHA256SUMS 2>/dev/null || sha256sum ./*.tar.gz > SHA256SUMS )
 
+echo ">> rendering Homebrew formula"
+render_formula
+
 echo ">> creating GitHub release $TAG"
 gh release create "$TAG" \
   --title "$TAG" \
   --notes "cb $TAG — disposable git worktree manager. Install: extract the archive for your platform, put cb-bin on PATH, then add \`eval \"\$(cb-bin init zsh)\"\` (or bash) to your shell rc." \
-  "$STAGE"/*.tar.gz "$STAGE/SHA256SUMS"
+  "$STAGE"/*.tar.gz "$STAGE/SHA256SUMS" "$STAGE/cb.rb"
 
 if [ "${CB_SKIP_TAP:-0}" = "1" ]; then
-  echo ">> skipping Homebrew tap bump (CB_SKIP_TAP=1)"
+  echo ">> skipping Homebrew tap update trigger (CB_SKIP_TAP=1)"
 else
-  echo ">> bumping Homebrew formula in $TAP"
-  publish_formula
+  echo ">> triggering Homebrew tap update ($TAP)"
+  trigger_tap_update
 fi
 
 echo ">> done"

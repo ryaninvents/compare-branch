@@ -6,6 +6,7 @@
     "version": "changeset version"
   },
   "devDependencies": {
-    "@changesets/cli": "^2.27.0"
+    "@changesets/cli": "^2.27.0",
+    "ejs": "^6.0.1"
   }
 }

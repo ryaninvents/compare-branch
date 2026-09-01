@@ -1,0 +1,60 @@
+class Cb < Formula
+  desc "Disposable git worktree manager"
+  homepage "https://github.com/<%= repo %>"
+  version "<%= version %>"
+  license "MIT"
+
+  depends_on "git"
+
+  on_macos do
+    on_arm do
+      url "<%= urlBase %>/cb-<%= tag %>-macos-arm64.tar.gz"
+      sha256 "<%= shaMacosArm64 %>"
+    end
+    on_intel do
+      url "<%= urlBase %>/cb-<%= tag %>-macos-x86_64.tar.gz"
+      sha256 "<%= shaMacosX86_64 %>"
+    end
+  end
+
+  on_linux do
+    on_arm do
+      url "<%= urlBase %>/cb-<%= tag %>-linux-arm64.tar.gz"
+      sha256 "<%= shaLinuxArm64 %>"
+    end
+    on_intel do
+      url "<%= urlBase %>/cb-<%= tag %>-linux-x86_64.tar.gz"
+      sha256 "<%= shaLinuxX86_64 %>"
+    end
+  end
+
+  def install
+    bin.install "cb-bin"
+    # Sourced wrapper functions (the cb() shell function) live under share/cb.
+    pkgshare.install "shell/cb.zsh", "shell/cb.bash"
+    # Completion: zsh onto fpath, bash into bash_completion.d.
+    zsh_completion.install "completions/_cb"
+    bash_completion.install "completions/cb.bash" => "cb"
+    # Man pages. Homebrew puts share/man on MANPATH automatically, so `man cb`
+    # works with no extra setup — unlike shell integration, this needs no
+    # caveat.
+    man1.install "man/cb.1"
+    man5.install "man/cb-config.5"
+    man7.install "man/cb-review.7"
+  end
+
+  def caveats
+    <<~CAVEATS
+      cb is driven by a shell function that fronts cb-bin (needed for `cb cd`,
+      `cb exit`, and `cb done`). Source the integration from your shell rc:
+        source "#{opt_share}/cb/cb.zsh"    # ~/.zshrc
+        source "#{opt_share}/cb/cb.bash"   # ~/.bashrc
+      Tab-completion is installed automatically (zsh requires Homebrew's
+      site-functions on your fpath; see `brew completions`).
+    CAVEATS
+  end
+
+  test do
+    assert_match "cb", shell_output("#{bin}/cb-bin init zsh")
+  end
+end
