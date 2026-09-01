@@ -23,9 +23,10 @@ pub fn whereami(ctx: *app.Context, rest: []const []const u8) !void {
         .worktree => |w| {
             const project = state.getProject(w.project).?;
             const wt = project.worktrees.get(w.worktree).?;
-            // Review worktrees have no regular .git (the isolated GIT_DIR
-            // lives elsewhere), so a plain `git` query here fails — fall
-            // back to the branch recorded at creation time.
+            // Every worktree kind now has a regular .git at wt.dir (.review
+            // is a real linked git worktree; .review_local is the user's own
+            // directory) — but query failure still falls back to the branch
+            // recorded at creation time rather than erroring out.
             const branch = ctx.git.capture(wt.dir, &.{ "symbolic-ref", "--short", "HEAD" }) catch
                 (ctx.git.capture(wt.dir, &.{ "rev-parse", "--short", "HEAD" }) catch null);
             defer if (branch) |b| ctx.gpa.free(b);

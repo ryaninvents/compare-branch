@@ -276,9 +276,15 @@ pub fn reviewDone(ctx: *app.Context, rest: []const []const u8) !void {
         if (!ok) return error.Aborted;
     }
 
-    // Remote reviews own their worktree dir and can be deleted; local reviews
-    // point at the user's own directory, which we must never remove.
-    if (wt.kind == .review) std.fs.cwd().deleteTree(wt.dir) catch {};
+    // Remote reviews own their worktree dir (a real linked `git worktree` of
+    // the project repo) and can be deleted; local reviews point at the user's
+    // own directory, which we must never remove.
+    if (wt.kind == .review) {
+        var out = try ctx.git.run(project.dir, &.{ "worktree", "remove", "--force", wt.dir });
+        defer out.deinit();
+        if (!out.ok()) ctx.warn("warning: git worktree remove failed: {s}", .{out.stderr});
+        std.fs.cwd().deleteTree(wt.dir) catch {};
+    }
     const git_dir = try engine.reviewDir(ctx, proj_key, wt_key);
     defer ctx.gpa.free(git_dir);
     std.fs.cwd().deleteTree(git_dir) catch {};

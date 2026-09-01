@@ -4,6 +4,7 @@ const args = @import("../args.zig");
 const store = @import("../../state/store.zig");
 const common = @import("common.zig");
 const model = @import("../../state/model.zig");
+const engine = @import("../../review/engine.zig");
 const Config = @import("../../config/config.zig").Config;
 
 // `cb mk` creates a branch + git worktree for a project; `cb rm` tears one down;
@@ -122,13 +123,34 @@ pub fn rm(ctx: *app.Context, rest: []const []const u8) !void {
 
     const force = a.flag(&.{"force"});
     if (!force) {
-        // Review worktrees are throwaway by construction (that's the whole
-        // mechanism); everything else gets checked so a disposable worktree
-        // never silently eats uncommitted or unpushed work.
-        if (wt.kind != .review) try refuseIfDirty(ctx, &wt);
+        // .work and .review are real git worktrees; .review_local points at
+        // the user's own directory. All three are checked so `cb rm` never
+        // silently eats uncommitted or unpushed work.
+        try refuseIfDirty(ctx, &wt);
         const ok = try common.confirm(ctx, "remove this worktree?");
         if (!ok) return error.Aborted;
     }
+
+    try removeWorktreeDir(ctx, project, &wt, force);
+    if (wt.kind == .review or wt.kind == .review_local) {
+        const git_dir = try engine.reviewDir(ctx, proj_key, wt_key);
+        defer ctx.gpa.free(git_dir);
+        std.fs.cwd().deleteTree(git_dir) catch {};
+    }
+
+    try store.appendEvent(ctx.gpa, ctx.state_path, store.WorktreeRemoved{
+        .at = ctx.now_unix,
+        .project = proj_key,
+        .key = wt_key,
+    });
+    ctx.print("removed worktree '{s}'\n", .{wt_key});
+}
+
+/// review_local's dir is the user's own directory (never a git worktree of the
+/// project) — never run `git worktree remove` against it. .work and .review
+/// are both real linked worktrees of the project repo.
+fn removeWorktreeDir(ctx: *app.Context, project: *const model.Project, wt: *const model.Worktree, force: bool) !void {
+    if (wt.kind == .review_local) return;
 
     const remove_args: []const []const u8 = if (force)
         &.{ "worktree", "remove", "--force", wt.dir }
@@ -139,13 +161,6 @@ pub fn rm(ctx: *app.Context, rest: []const []const u8) !void {
     // Even if the git worktree is already gone, drop it from our state so the
     // registry doesn't accumulate ghosts.
     if (!out.ok()) ctx.warn("warning: git worktree remove failed: {s}", .{out.stderr});
-
-    try store.appendEvent(ctx.gpa, ctx.state_path, store.WorktreeRemoved{
-        .at = ctx.now_unix,
-        .project = proj_key,
-        .key = wt_key,
-    });
-    ctx.print("removed worktree '{s}'\n", .{wt_key});
 }
 
 pub fn cdPath(ctx: *app.Context, rest: []const []const u8) !void {

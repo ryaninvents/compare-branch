@@ -19,26 +19,42 @@ The model is adapted from
 .Lk https://github.com/ryaninvents/rapid-review rapid-review .
 .Sh THE ISOLATED REVIEW REPO
 .Ic cb review Ar key branch
-creates a throwaway worktree directory holding the full content of
-.Ar branch ,
-plus a second, separate git directory \(em the
+creates a real, linked
+.Xr git-worktree 1
+of the project repo, checked out at the full content of
+.Ar branch .
+Because it is a genuine worktree, plain
+.Xr git 1
+and
+.Xr gh 1
+work in it exactly as anywhere else \(em
+.Ic git log ,
+.Ic git status ,
+.Ic git remote ,
+.Ic gh pr view --web
+\(em with no special setup.
+Alongside it,
+.Nm cb
+creates a second, separate git directory \(em the
 .Em review repo
 \(em that shares the project's object database via
 .Pa objects/info/alternates
 but keeps its own
 .Ev HEAD ,
-index, and refs.
+index, and refs, entirely independent of the worktree's own
+.Ev HEAD
+and index.
 The two are wired together for the reviewer via
 .Ev GIT_DIR
 .Pq the review repo
 and
 .Ev GIT_WORK_TREE
-.Pq the throwaway worktree
+.Pq the same directory, as a working tree
 whenever
 .Nm cb
 spawns a shell for it, so
 .Xr git 1
-commands run there see:
+commands run there see the review repo's view instead:
 .Bl -tag -width Ds
 .It Ev HEAD Pq the reviewed baseline
 Starts at
@@ -78,10 +94,17 @@ to checkpoint a batch and advance
 .Ev HEAD .
 .Ic cb refresh
 fetches new upstream commits and updates the working tree
-.Pq via Ic git restore --source ,
+.Pq via a plain Ic git reset --hard No in the worktree's own frame ,
 so amended code you already reviewed and committed resurfaces as
 changed again, without discarding your committed review progress or
 requiring a rebase.
+This also keeps the worktree's own
+.Ev HEAD
+and history current, so a plain
+.Ic cd
+into it after refreshing still shows
+.Ar branch Ns 's
+latest commits.
 .Pp
 It also re-derives
 .Ar base

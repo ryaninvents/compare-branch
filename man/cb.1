@@ -251,17 +251,25 @@ With no arguments, infers the target from
 .Sx CWD INFERENCE ) .
 Before removing, refuses \(em printing an itemized summary \(em a
 worktree that has uncommitted or untracked changes, or commits not yet
-pushed to its upstream; review worktrees
-.Pq Xr cb-review 7
-are exempt, since they are throwaway by construction.
+pushed to its upstream.
 .Fl Fl force
 bypasses this check and removes regardless.
+For a
+.Cm review
+worktree
+.Pq Xr cb-review 7 ,
+also deletes its review repo; for
+.Cm review-local ,
+only the review repo is deleted \(em the directory itself is yours,
+not
+.Nm Ns 's ,
+and is never touched.
 .Fl i
 opens an interactive picker instead
 .Pq Sx INTERACTIVE SELECTION .
 .Ss review Ar key Ar branch | pr-number | pr-url
 Check out a remote branch, or the head branch of a GitHub pull request,
-into a throwaway worktree with an isolated review repo.
+into a real git worktree paired with an isolated review repo.
 See
 .Xr cb-review 7
 for the full model;

@@ -9,17 +9,23 @@ const git = @import("../git/git.zig");
 //
 //   HEAD (refs/heads/review) = the reviewed baseline; starts at the merge-base
 //     and advances each time the reviewer commits a batch.
-//   working tree            = the full target content the reviewer reads.
-//   `git status`            = working tree vs index(HEAD) = exactly what is left
-//                             to review.
+//   working tree            = a real `git worktree add` checkout of the target
+//     branch in the project repo, so plain `git`/`gh` work in it outside the
+//     review shell (log, status, remotes, `gh pr view --web`).
+//   `git status`            = (inside the review shell, GIT_DIR/GIT_WORK_TREE
+//                             pointed at R) working tree vs index(HEAD) =
+//                             exactly what is left to review.
 //
-// `cb refresh` re-fetches the target and uses `git restore --source` to update
-// the working tree only, so amended-but-already-reviewed code reappears without
-// discarding committed review progress. It also re-derives the base the same
-// way setup did (refs/cb/base tracks the last one) and 3-way-merges mainline's
-// delta into the reviewed baseline, so a merge-from-main or a moved base
-// branch reads as already-reviewed instead of muddying the diff with someone
-// else's already-landed code.
+// The two views share the same directory but never fight: R's HEAD/index live
+// entirely in R's own git-dir, untouched by the project-side worktree's HEAD/
+// index. `cb refresh` re-fetches the target and `git reset --hard`s the
+// project-side worktree to the new tip — updating the shared working tree
+// files exactly as a `restore` would, but also keeping the plain `cd` view's
+// history and status accurate. It also re-derives the base the same way setup
+// did (refs/cb/base tracks the last one) and 3-way-merges mainline's delta
+// into the reviewed baseline, so a merge-from-main or a moved base branch
+// reads as already-reviewed instead of muddying the diff with someone else's
+// already-landed code.
 
 pub const target_ref = "refs/cb/target";
 pub const mainline_ref = "refs/cb/mainline";
@@ -132,17 +138,32 @@ pub fn setupRemote(ctx: *app.Context, o: RemoteOpts) !void {
         try ctx.git.capture(null, &.{ "--git-dir", o.git_dir, "merge-base", target_ref, mainline_ref });
     defer ctx.gpa.free(base_commit);
 
-    try populateAndSeed(ctx, o.git_dir, o.work_tree, base_commit);
+    try addProjectWorktree(ctx, o.project_dir, o.branch, origin_target, o.work_tree);
+
+    const g = isolated(ctx, o.git_dir, o.work_tree);
+    try seedBaseline(ctx, g, o.git_dir, base_commit);
 }
 
-/// Fill the (empty) work tree with the target's content, then reset the index
-/// and HEAD to the base so everything from base→target reads as "to review".
-fn populateAndSeed(ctx: *app.Context, git_dir: []const u8, work_tree: []const u8, base_commit: []const u8) !void {
-    try std.fs.cwd().makePath(work_tree);
-    const g = isolated(ctx, git_dir, work_tree);
-    try runMust(ctx, g, null, &.{ "read-tree", target_ref });
-    try runMust(ctx, g, null, &.{ "checkout-index", "-a", "-f" });
-    try seedBaseline(ctx, g, git_dir, base_commit);
+/// Check out the target branch as a real linked `git worktree` of the project
+/// repo, so plain git/gh work in it outside the review shell. Prefers a
+/// tracking branch (so `gh pr view` can infer the PR from the branch name);
+/// falls back to a detached checkout when the branch is already checked out
+/// elsewhere or otherwise unavailable as a new local branch.
+fn addProjectWorktree(ctx: *app.Context, project_dir: []const u8, branch: []const u8, origin_ref: []const u8, dir: []const u8) !void {
+    var out = try ctx.git.run(project_dir, &.{ "worktree", "add", "--track", "-b", branch, dir, origin_ref });
+    defer out.deinit();
+    if (out.ok()) return;
+
+    ctx.warn(
+        "cb review: could not create tracking branch '{s}' ({s}); falling back to a detached checkout (gh pr view will need an explicit PR number)\n",
+        .{ branch, std.mem.trimRight(u8, out.stderr, "\n") },
+    );
+    var out2 = try ctx.git.run(project_dir, &.{ "worktree", "add", "--detach", dir, origin_ref });
+    defer out2.deinit();
+    if (!out2.ok()) {
+        ctx.warn("{s}", .{out2.stderr});
+        return error.GitFailed;
+    }
 }
 
 pub const LocalOpts = struct {
@@ -373,13 +394,18 @@ pub fn refreshRemote(ctx: *app.Context, o: RefreshRemoteOpts) !AdvanceResult {
     }
     errdefer result.deinit(ctx.gpa);
 
-    // Update only the working tree to the new target; anything advanceBase
-    // didn't already fold in stays as-is, so amended reviewed files resurface
-    // as unreviewed without discarding progress.
-    const g = isolated(ctx, o.git_dir, o.work_tree);
-    var out = try g.run(o.work_tree, &.{ "restore", "--source", target_ref, "--worktree", "--", "." });
-    defer out.deinit();
-    try must(ctx, &out);
+    // Advance the project-side worktree (the shared working tree) to the new
+    // target with a plain `reset --hard` in its own frame — no --git-dir
+    // override, so this uses the linked worktree's own HEAD/index, leaving the
+    // review repo's HEAD/index (and therefore what still reads as "to review")
+    // untouched. Anything advanceBase didn't already fold in stays reviewed-
+    // stale, so amended-but-already-reviewed files resurface as unreviewed
+    // without discarding progress.
+    const target_sha = try ctx.git.capture(null, &.{ "--git-dir", o.git_dir, "rev-parse", target_ref });
+    defer ctx.gpa.free(target_sha);
+    var reset_out = try ctx.git.run(o.work_tree, &.{ "reset", "--hard", target_sha });
+    defer reset_out.deinit();
+    try must(ctx, &reset_out);
 
     return result;
 }

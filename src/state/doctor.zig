@@ -9,10 +9,10 @@ const std = @import("std");
 pub const Entry = struct {
     key: []const u8,
     dir: []const u8,
-    /// True for kind == .work: reconciled against `git worktree list`. False
-    /// for review/review_local worktrees, which aren't real git worktrees (the
-    /// review engine uses an isolated GIT_DIR) — those are only checked for
-    /// existence on disk.
+    /// True for kind == .work or .review: both are real linked `git worktree`
+    /// checkouts of the project repo, reconciled against `git worktree list`.
+    /// False for review_local, which points at the user's own directory —
+    /// only checked for existence on disk.
     is_git_worktree: bool,
     exists_on_disk: bool,
 };
@@ -97,7 +97,7 @@ test "reconcile: git worktree with no matching state entry is an orphan" {
     try std.testing.expectEqualStrings("/wt/b", findings[0].orphan.dir);
 }
 
-test "reconcile: review-kind entry missing on disk is a ghost, never compared to git" {
+test "reconcile: review_local entry missing on disk is a ghost, never compared to git" {
     const a = std.testing.allocator;
     const entries = [_]Entry{.{ .key = "r", .dir = "/wt/r", .is_git_worktree = false, .exists_on_disk = false }};
     const findings = try reconcile(a, &entries, &.{});
@@ -106,7 +106,7 @@ test "reconcile: review-kind entry missing on disk is a ghost, never compared to
     try std.testing.expect(findings[0] == .ghost);
 }
 
-test "reconcile: review-kind entry present on disk produces no finding" {
+test "reconcile: review_local entry present on disk produces no finding" {
     const a = std.testing.allocator;
     const entries = [_]Entry{.{ .key = "r", .dir = "/wt/r", .is_git_worktree = false, .exists_on_disk = true }};
     const findings = try reconcile(a, &entries, &.{});

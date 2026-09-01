@@ -54,10 +54,20 @@ out="$(echo y | "$BIN" rm demo clean)"
 assert_contains "$out" "removed worktree 'clean'" "clean rm output"
 [ -d "$wt_dir3" ] && fail "clean worktree should have been removed"
 
-echo "[5] a review worktree is exempt from the dirty check"
+echo "[5] a review worktree is a real linked worktree, so it gets the same dirty check"
 ( cd "$ORIGIN" && git checkout -q -b feature && git commit -q --allow-empty -m feat && git checkout -q main )
 "$BIN" review demo feature > /dev/null
-out="$(echo y | "$BIN" rm demo feature)"
-assert_contains "$out" "removed worktree 'feature'" "review rm output"
+wt_dir4="$("$BIN" cd-path demo feature --no-fetch)"
+gd4="$TMP/reviews/demo--feature.git"
+[ -d "$gd4" ] || fail "review git dir missing"
+( cd "$wt_dir4" && git -c user.email=t@t.t -c user.name=t commit -q --allow-empty -m wip )
+if "$BIN" rm demo feature 2>/tmp/rm_err3.$$; then fail "rm should have refused a review worktree with unpushed commits"; fi
+assert_contains "$(cat /tmp/rm_err3.$$)" "uncommitted or unpushed work" "review unpushed refusal message"
+rm -f /tmp/rm_err3.$$
+
+echo "[6] --force on a review worktree removes both the checkout and its review repo (no leak)"
+"$BIN" rm demo feature --force > /dev/null
+[ -d "$wt_dir4" ] && fail "--force should have removed the review worktree"
+[ -d "$gd4" ] && fail "--force should have removed the review git dir too"
 
 echo "ALL E2E PASSED ($PASS assertions)"

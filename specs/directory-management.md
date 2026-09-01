@@ -135,10 +135,11 @@ filesystem and reports:
 
 Read-only by default. `--fix` appends corrective events (a removal for each
 ghost, an adoption for each orphan) — consistent with the append-only log,
-this never rewrites existing lines. Review worktrees aren't real git
-worktrees (they use an isolated `GIT_DIR`, see Reviews below), so they're
-only checked for existence on disk, never compared against `git worktree
-list`.
+this never rewrites existing lines. `cb review` worktrees are real linked
+`git worktree`s of the project repo (see Reviews below) and are compared
+against `git worktree list` like ordinary ones. `cb review-local` worktrees
+point at the user's own directory and are only checked for existence on
+disk.
 
 # Reviews
 
@@ -146,7 +147,7 @@ list`.
 cb review <project-key> <remote-branch-name | PR-number | PR-URL> [-t|--ticket <ticket_id>] [-n|--note <note>] [--base <branch>] [--shell]
 ```
 
-Creates a "review worktree". This is the same as a regular worktree, except with a couple of additional features pertaining to reviews. See <https://github.com/ryaninvents/rapid-review> for a Bash implementation of the review workflow. We're not copying rapid-review, but we're using the same `--git-dir` mechanism to allow the user to review code incrementally.
+Creates a "review worktree": a real `git worktree` of the project repo, checked out at the target branch, so plain `git`/`gh` (log, status, remotes, `gh pr view --web`) work in it like any other worktree. Alongside it, `cb` creates a second, isolated git directory — the *review repo* — that shares the project's object database but keeps its own `HEAD`/index/refs. See <https://github.com/ryaninvents/rapid-review> for a Bash implementation of the review workflow. We're not copying rapid-review, but we're using the same `--git-dir` mechanism, layered on top of the real worktree, to allow the user to review code incrementally: `cb review-shell` points `GIT_DIR`/`GIT_WORK_TREE` at the review repo so `git status` there shows only what's left to review; a plain `cd` into the same directory sees the real branch history instead. See <cb-review(7)> for the mechanism in full.
 
 We always use `git merge-base` when comparing, so that we don't end up having to review all of the commits that landed on the main branch since this one. We can use `--base` to specify a different base, but always use `git merge-base` to get the merge base when comparing (unless `--no-merge-base` is used).
 

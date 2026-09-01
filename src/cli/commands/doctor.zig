@@ -58,7 +58,7 @@ fn checkProject(ctx: *app.Context, key: []const u8, project: *model.Project, fix
         try entries.append(.{
             .key = wt.key,
             .dir = wt.dir,
-            .is_git_worktree = wt.kind == .work,
+            .is_git_worktree = wt.kind == .work or wt.kind == .review,
             .exists_on_disk = dirExists(wt.dir),
         });
     }
