@@ -113,6 +113,7 @@ fn errorMessage(err: anyerror) []const u8 {
         error.NotInWorktree => "current directory is not inside any registered project or worktree",
         error.AmbiguousContext => "current directory matches more than one registered project/worktree — pass <key> <worktree-key> explicitly",
         error.NotInteractive => "interactive picker requires a terminal (stdin/stderr must be a tty)",
+        error.WorktreeDirty => "worktree has uncommitted or unpushed work — pass --force to remove anyway",
         else => @errorName(err),
     };
 }

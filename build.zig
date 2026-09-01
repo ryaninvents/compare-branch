@@ -55,11 +55,13 @@ pub fn build(b: *std.Build) void {
         release_step.dependOn(&install.step);
     }
 
-    // `zig build e2e` builds the binary then runs the hermetic review tests.
-    const e2e = b.addSystemCommand(&.{ "bash", "e2e/review_e2e.sh" });
-    e2e.step.dependOn(b.getInstallStep());
-    const e2e_step = b.step("e2e", "Run end-to-end review tests");
-    e2e_step.dependOn(&e2e.step);
+    // `zig build e2e` builds the binary then runs the hermetic e2e scripts.
+    const e2e_step = b.step("e2e", "Run end-to-end tests");
+    for (&[_][]const u8{ "e2e/review_e2e.sh", "e2e/rm_safety_e2e.sh" }) |script| {
+        const e2e = b.addSystemCommand(&.{ "bash", script });
+        e2e.step.dependOn(b.getInstallStep());
+        e2e_step.dependOn(&e2e.step);
+    }
 
     const unit_tests = b.addTest(.{
         .root_source_file = b.path("src/main.zig"),

@@ -82,7 +82,11 @@ cb config [path]
   terminal.
 - **`rm`** with no args infers the worktree containing `$PWD` (both `<key>` and
   `<worktree-key>` must be given together, or omitted together). `refresh` does
-  the same outside a review shell.
+  the same outside a review shell. Before removing, it refuses (with an
+  itemized summary) if the worktree has uncommitted/untracked changes or
+  commits not yet pushed upstream — `--force` bypasses this and removes
+  regardless. Review worktrees (`cb review`) are exempt, since they're
+  throwaway by construction.
 - **`whereami`** reports the project, worktree, branch, and base for the current
   directory — inferred by matching `$PWD` against every registered project and
   worktree dir. Outside any registered tree it errors; if two registered dirs

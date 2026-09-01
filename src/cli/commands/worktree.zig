@@ -3,6 +3,7 @@ const app = @import("../app.zig");
 const args = @import("../args.zig");
 const store = @import("../../state/store.zig");
 const common = @import("common.zig");
+const model = @import("../../state/model.zig");
 
 // `cb mk` creates a branch + git worktree for a project; `cb rm` tears one down;
 // `cb cd`/`cd-path` resolves the directory the shell wrapper cd's into.
@@ -105,12 +106,21 @@ pub fn rm(ctx: *app.Context, rest: []const []const u8) !void {
     const project = try common.requireProject(&state, proj_key);
     const wt = project.worktrees.get(wt_key) orelse return error.WorktreeNotFound;
 
-    if (!a.flag(&.{"force"})) {
+    const force = a.flag(&.{"force"});
+    if (!force) {
+        // Review worktrees are throwaway by construction (that's the whole
+        // mechanism); everything else gets checked so a disposable worktree
+        // never silently eats uncommitted or unpushed work.
+        if (wt.kind != .review) try refuseIfDirty(ctx, &wt);
         const ok = try common.confirm(ctx, "remove this worktree?");
         if (!ok) return error.Aborted;
     }
 
-    var out = try ctx.git.run(project.dir, &.{ "worktree", "remove", "--force", wt.dir });
+    const remove_args: []const []const u8 = if (force)
+        &.{ "worktree", "remove", "--force", wt.dir }
+    else
+        &.{ "worktree", "remove", wt.dir };
+    var out = try ctx.git.run(project.dir, remove_args);
     defer out.deinit();
     // Even if the git worktree is already gone, drop it from our state so the
     // registry doesn't accumulate ghosts.
@@ -216,4 +226,57 @@ fn reportDivergence(ctx: *app.Context, wt_dir: []const u8) void {
     } else {
         ctx.warn("note: {d} ahead of {s}\n", .{ ahead, upstream });
     }
+}
+
+/// Refuse `cb rm` when the worktree has uncommitted/untracked changes or
+/// commits not yet pushed upstream — printing an itemized summary of what's
+/// at risk. --force bypasses this entirely (see rm()); this only runs
+/// otherwise, so it's the only thing standing between a disposable worktree
+/// and losing real work.
+fn refuseIfDirty(ctx: *app.Context, wt: *const model.Worktree) !void {
+    var status_out = ctx.git.run(wt.dir, &.{ "status", "--porcelain" }) catch return;
+    defer status_out.deinit();
+
+    var dirty_count: usize = 0;
+    var shown: usize = 0;
+    if (status_out.ok()) {
+        var lines = std.mem.splitScalar(u8, std.mem.trimRight(u8, status_out.stdout, "\n"), '\n');
+        while (lines.next()) |line| {
+            if (line.len == 0) continue;
+            if (dirty_count == 0) ctx.warn("cb rm: worktree has uncommitted changes:\n", .{});
+            if (shown < 10) {
+                ctx.warn("  {s}\n", .{line});
+                shown += 1;
+            }
+            dirty_count += 1;
+        }
+    }
+    if (dirty_count > shown) ctx.warn("  (+{d} more)\n", .{dirty_count - shown});
+
+    const unpushed = unpushedCount(ctx, wt);
+    if (unpushed > 0) {
+        ctx.warn("cb rm: worktree has {d} commit(s) not pushed upstream\n", .{unpushed});
+    }
+
+    if (dirty_count > 0 or unpushed > 0) {
+        ctx.warn("cb rm: pass --force to remove anyway\n", .{});
+        return error.WorktreeDirty;
+    }
+}
+
+fn unpushedCount(ctx: *app.Context, wt: *const model.Worktree) usize {
+    var upstream_check = ctx.git.run(wt.dir, &.{ "rev-parse", "--verify", "--quiet", "@{u}" }) catch return 0;
+    defer upstream_check.deinit();
+
+    var out = if (upstream_check.ok())
+        ctx.git.run(wt.dir, &.{ "rev-list", "--count", "@{u}..HEAD" }) catch return 0
+    else blk: {
+        const base = wt.base orelse return 0;
+        const range = std.fmt.allocPrint(ctx.gpa, "{s}..HEAD", .{base}) catch return 0;
+        defer ctx.gpa.free(range);
+        break :blk ctx.git.run(wt.dir, &.{ "rev-list", "--count", range }) catch return 0;
+    };
+    defer out.deinit();
+    if (!out.ok()) return 0;
+    return std.fmt.parseInt(usize, out.line(), 10) catch 0;
 }
