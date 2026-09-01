@@ -103,7 +103,69 @@ pub const Config = struct {
         defer self.arena.allocator().free(rendered);
         return allocator.dupe(u8, rendered);
     }
+
+    pub const HookContext = struct {
+        project_dir: []const u8,
+        worktree_dir: []const u8,
+        worktree_key: []const u8,
+        branch: []const u8,
+        base: []const u8,
+        ticket: ?[]const u8 = null,
+    };
+
+    /// Render one `worktrees.copy`/`worktrees.onCreate` template-DSL entry
+    /// with the post-creation hook context (projectDir, worktreeDir, and the
+    /// usual ticket/worktree-key) in scope.
+    pub fn renderHookEntry(
+        self: *Config,
+        allocator: std.mem.Allocator,
+        tmpl: std.json.Value,
+        hook_ctx: HookContext,
+        now_unix: i64,
+    ) ![]u8 {
+        var ctx = std.StringHashMap([]const u8).init(allocator);
+        defer ctx.deinit();
+        try ctx.put("projectDir", hook_ctx.project_dir);
+        try ctx.put("worktreeDir", hook_ctx.worktree_dir);
+        try ctx.put("worktree-key", hook_ctx.worktree_key);
+        try ctx.put("branch", hook_ctx.branch);
+        try ctx.put("base", hook_ctx.base);
+        if (hook_ctx.ticket) |t| try ctx.put("ticket", t);
+
+        var resolving = std.ArrayList([]const u8).init(allocator);
+        defer resolving.deinit();
+
+        const scope = self.buildScope(&ctx, &resolving, now_unix);
+        const rendered = try template.render(scope, tmpl);
+        defer self.arena.allocator().free(rendered);
+        return allocator.dupe(u8, rendered);
+    }
+
+    /// `worktrees.copy` entries: project override (`projects.overrides.<key>.
+    /// worktrees.copy`) wins over the global `worktrees.copy`; no built-in
+    /// default (an empty list — copying nothing is the safe default).
+    pub fn worktreesCopy(self: *Config, project_key: []const u8) []std.json.Value {
+        return asList(self.worktreesField(project_key, "copy"));
+    }
+
+    /// `worktrees.onCreate` entries, same lookup order as worktreesCopy.
+    pub fn worktreesOnCreate(self: *Config, project_key: []const u8) []std.json.Value {
+        return asList(self.worktreesField(project_key, "onCreate"));
+    }
+
+    fn worktreesField(self: *Config, project_key: []const u8, field: []const u8) std.json.Value {
+        if (navigate(self.user.value, &.{ "projects", "overrides", project_key, "worktrees", field })) |v| return v;
+        if (navigate(self.user.value, &.{ "worktrees", field })) |v| return v;
+        return .null;
+    }
 };
+
+fn asList(v: std.json.Value) []std.json.Value {
+    return switch (v) {
+        .array => |a| a.items,
+        else => &.{},
+    };
+}
 
 fn navigate(root: std.json.Value, path: []const []const u8) ?std.json.Value {
     var cur = root;

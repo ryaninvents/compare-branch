@@ -4,12 +4,13 @@ const args = @import("../args.zig");
 const store = @import("../../state/store.zig");
 const common = @import("common.zig");
 const model = @import("../../state/model.zig");
+const Config = @import("../../config/config.zig").Config;
 
 // `cb mk` creates a branch + git worktree for a project; `cb rm` tears one down;
 // `cb cd`/`cd-path` resolves the directory the shell wrapper cd's into.
 
 pub fn mk(ctx: *app.Context, rest: []const []const u8) !void {
-    var a = try args.parse(ctx.gpa, rest, &.{"no-fetch"});
+    var a = try args.parse(ctx.gpa, rest, &.{ "no-fetch", "no-hooks" });
     defer a.deinit();
 
     const proj_key = a.pos(0) orelse return error.MissingArgument;
@@ -45,6 +46,17 @@ pub fn mk(ctx: *app.Context, rest: []const []const u8) !void {
     // state/locate.zig (e.g. macOS's /tmp -> /private/tmp).
     const dir = std.fs.cwd().realpathAlloc(ctx.gpa, raw_dir) catch try ctx.gpa.dupe(u8, raw_dir);
     defer ctx.gpa.free(dir);
+
+    if (!a.flag(&.{"no-hooks"})) {
+        try runCopyHooks(ctx, proj_key, .{
+            .project_dir = project.dir,
+            .worktree_dir = dir,
+            .worktree_key = wt_key,
+            .branch = branch,
+            .base = base,
+            .ticket = ticket,
+        });
+    }
 
     try store.appendEvent(ctx.gpa, ctx.state_path, store.WorktreeCreated{
         .at = ctx.now_unix,
@@ -261,4 +273,44 @@ fn unpushedCount(ctx: *app.Context, wt: *const model.Worktree) usize {
     defer out.deinit();
     if (!out.ok()) return 0;
     return std.fmt.parseInt(usize, out.line(), 10) catch 0;
+}
+
+/// Copy each `worktrees.copy` entry (e.g. `.env`) from the project checkout
+/// into the freshly created worktree. A missing source is a warning, not a
+/// failure — plenty of repos don't have a `.env` in every branch. Rejects any
+/// rendered entry that resolves outside the worktree (`..` or an absolute
+/// path) since these strings come from config, however unlikely a malicious
+/// one is.
+fn runCopyHooks(ctx: *app.Context, proj_key: []const u8, hook_ctx: Config.HookContext) !void {
+    const entries = ctx.config.worktreesCopy(proj_key);
+    for (entries) |entry_tmpl| {
+        const rel = try ctx.config.renderHookEntry(ctx.gpa, entry_tmpl, hook_ctx, ctx.now_unix);
+        defer ctx.gpa.free(rel);
+        if (rel.len == 0) continue;
+
+        if (std.fs.path.isAbsolute(rel) or isOutsideWorktree(rel)) {
+            ctx.warn("cb mk: skipping worktrees.copy entry '{s}': must be a relative path inside the worktree\n", .{rel});
+            continue;
+        }
+
+        const src = try std.fs.path.join(ctx.gpa, &.{ hook_ctx.project_dir, rel });
+        defer ctx.gpa.free(src);
+        const dest = try std.fs.path.join(ctx.gpa, &.{ hook_ctx.worktree_dir, rel });
+        defer ctx.gpa.free(dest);
+
+        if (std.fs.path.dirname(dest)) |parent| std.fs.cwd().makePath(parent) catch {};
+
+        std.fs.cwd().copyFile(src, std.fs.cwd(), dest, .{}) catch |err| switch (err) {
+            error.FileNotFound => ctx.warn("cb mk: worktrees.copy: '{s}' not found in the project checkout, skipped\n", .{rel}),
+            else => ctx.warn("cb mk: worktrees.copy: could not copy '{s}': {s}\n", .{ rel, @errorName(err) }),
+        };
+    }
+}
+
+fn isOutsideWorktree(rel: []const u8) bool {
+    var it = std.mem.tokenizeScalar(u8, rel, '/');
+    while (it.next()) |seg| {
+        if (std.mem.eql(u8, seg, "..")) return true;
+    }
+    return false;
 }

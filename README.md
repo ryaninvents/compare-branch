@@ -53,7 +53,7 @@ forwards straight to `cb-bin`.
 
 ```sh
 cb mkproject <key> [<dir>] [--remote <url>] [--category <cat>] [--worktrees <path>]
-cb mk <key> <worktree-key> [-t <ticket>] [--base <branch>] [--branch-name <name>] [-n <note>]
+cb mk <key> <worktree-key> [-t <ticket>] [--base <branch>] [--branch-name <name>] [-n <note>] [--no-hooks]
 cb cd [<key> [<worktree-key>]] [-i]
 cb ls [<key>] [--json] [--no-status]
 cb rm [<key> <worktree-key>] [-i]
@@ -175,6 +175,32 @@ concatenated, with `{"var": name}`, `{"date": format}`, and
 
 Branch names become directory names by mapping `/` → `--` and other awkward
 characters → `-`. Dates are formatted in UTC (tokens: `YYYY MM DD HH mm ss`).
+
+### Post-create hooks
+
+`cb mk` can copy files from the project checkout into the new worktree
+(e.g. an untracked `.env`) via `worktrees.copy`:
+
+```jsonc
+{
+  "worktrees": {
+    "copy": [".env", ".env.local"]
+  },
+  "projects": {
+    "overrides": {
+      "myproj": { "worktrees": { "copy": [".env", "config/local.json"] } }
+    }
+  }
+}
+```
+
+A project override in `projects.overrides.<key>.worktrees` **replaces** the
+global `worktrees.copy` for that project entirely — it doesn't merge with it.
+Entries are template-DSL values, with `projectDir` and `worktreeDir`
+available alongside the usual `ticket`/`worktree-key` context. Entries must
+be relative paths inside the worktree (`..` and absolute paths are
+rejected); a missing source is a warning, not a failure. `--no-hooks` on
+`cb mk` skips this.
 
 ## State
 

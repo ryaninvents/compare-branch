@@ -38,7 +38,7 @@ pub const usage =
     \\
     \\Usage:
     \\  cb mkproject <key> [<dir>] [--remote <url>] [--category <cat>] [--worktrees <path>]
-    \\  cb mk <key> <worktree-key> [-t <ticket>] [--base <branch>] [--branch-name <name>] [-n <note>] [--no-cd] [--no-fetch]
+    \\  cb mk <key> <worktree-key> [-t <ticket>] [--base <branch>] [--branch-name <name>] [-n <note>] [--no-cd] [--no-fetch] [--no-hooks]
     \\  cb cd [<key> [<worktree-key>]] [-i] [--no-fetch] [--no-pull]
     \\  cb ls [<key>] [--json] [--no-status]
     \\  cb rmproject <key> [--delete-dir]
