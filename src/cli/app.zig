@@ -43,7 +43,7 @@ pub const usage =
     \\  cb ls [<key>] [--json] [--no-status]
     \\  cb rmproject <key> [--delete-dir]
     \\  cb rm [<key> <worktree-key>] [-i] [--force]
-    \\  cb review <key> <remote-branch> [-t <ticket>] [-n <note>] [--base <branch>] [--no-merge-base] [--shell]
+    \\  cb review <key> <remote-branch | PR number | PR URL> [-t <ticket>] [-n <note>] [--base <branch>] [--no-merge-base] [--shell]
     \\  cb review-local <key> <dir>
     \\  cb refresh [<key> <worktree-key>]
     \\  cb review-shell [<key> <worktree-key>] [-i]
@@ -117,6 +117,9 @@ fn errorMessage(err: anyerror) []const u8 {
         error.AmbiguousContext => "current directory matches more than one registered project/worktree — pass <key> <worktree-key> explicitly",
         error.NotInteractive => "interactive picker requires a terminal (stdin/stderr must be a tty)",
         error.WorktreeDirty => "worktree has uncommitted or unpushed work — pass --force to remove anyway",
+        error.GhNotFound => "gh (GitHub CLI) was not found on PATH — required to review a PR number/URL",
+        error.GhFailed => "gh pr view failed (see above) — is this a PR in the project's repo, and are you authenticated with `gh auth login`?",
+        error.ForkPrNotSupported => "PR is from a fork (see above for a workaround)",
         else => @errorName(err),
     };
 }

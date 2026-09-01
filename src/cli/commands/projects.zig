@@ -153,6 +153,8 @@ fn lsWorktrees(ctx: *app.Context, key: []const u8, project: *const model.Project
         ctx.print("{s:<16} {s:<12} {s:<28} {s:<10} {s}\n", .{ wt.key, wt.kind.toString(), wt.branch, age, status });
         if (wt.ticket) |t| ctx.print("  ticket: {s}\n", .{t});
         if (wt.note) |n| ctx.print("  note:   {s}\n", .{n});
+        if (wt.pr_title) |t| ctx.print("  PR:     {s}\n", .{t});
+        if (wt.pr_author) |au| ctx.print("  author: {s}\n", .{au});
         ctx.print("  path:   {s}\n", .{wt.dir});
     }
 }
@@ -246,6 +248,9 @@ fn lsWorktreesJson(ctx: *app.Context, key: []const u8, project: *const model.Pro
             .reviewBranch = wt.review_branch,
             .targetDir = wt.target_dir,
             .lastRefreshed = wt.last_refreshed,
+            .prTitle = wt.pr_title,
+            .prAuthor = wt.pr_author,
+            .prUrl = wt.pr_url,
         }, stringify_opts, out.writer());
     }
     try out.append(']');

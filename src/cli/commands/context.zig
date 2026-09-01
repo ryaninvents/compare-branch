@@ -23,6 +23,9 @@ pub fn whereami(ctx: *app.Context, rest: []const []const u8) !void {
         .worktree => |w| {
             const project = state.getProject(w.project).?;
             const wt = project.worktrees.get(w.worktree).?;
+            // Review worktrees have no regular .git (the isolated GIT_DIR
+            // lives elsewhere), so a plain `git` query here fails — fall
+            // back to the branch recorded at creation time.
             const branch = ctx.git.capture(wt.dir, &.{ "symbolic-ref", "--short", "HEAD" }) catch
                 (ctx.git.capture(wt.dir, &.{ "rev-parse", "--short", "HEAD" }) catch null);
             defer if (branch) |b| ctx.gpa.free(b);
@@ -30,11 +33,13 @@ pub fn whereami(ctx: *app.Context, rest: []const []const u8) !void {
             ctx.print("project:  {s}\n", .{w.project});
             ctx.print("worktree: {s}\n", .{w.worktree});
             ctx.print("kind:     {s}\n", .{wt.kind.toString()});
-            ctx.print("branch:   {s}\n", .{branch orelse "(unknown)"});
+            ctx.print("branch:   {s}\n", .{branch orelse wt.branch});
             ctx.print("path:     {s}\n", .{wt.dir});
             ctx.print("base:     {s}\n", .{wt.base orelse "(unknown)"});
             if (wt.ticket) |t| ctx.print("ticket:   {s}\n", .{t});
             if (wt.note) |n| ctx.print("note:     {s}\n", .{n});
+            if (wt.pr_title) |t| ctx.print("PR:       {s}\n", .{t});
+            if (wt.pr_author) |au| ctx.print("author:   {s}\n", .{au});
         },
         .project => |p| {
             const project = state.getProject(p.project).?;

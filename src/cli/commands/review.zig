@@ -6,6 +6,7 @@ const model = @import("../../state/model.zig");
 const sanitize = @import("../../util/sanitize.zig");
 const engine = @import("../../review/engine.zig");
 const common = @import("common.zig");
+const pr = @import("../../review/pr.zig");
 
 // Review-flow commands. `review`/`review-local` create a review worktree and its
 // isolated review repo; `refresh` pulls new changes into the batch; `review-shell`
@@ -17,13 +18,35 @@ pub fn review(ctx: *app.Context, rest: []const []const u8) !void {
     defer a.deinit();
 
     const proj_key = a.pos(0) orelse return error.MissingArgument;
-    const branch = a.pos(1) orelse return error.MissingArgument;
+    const target = a.pos(1) orelse return error.MissingArgument;
 
     var state = try common.loadState(ctx);
     defer state.deinit();
     const project = try common.requireProject(&state, proj_key);
 
-    const key = try sanitize.branchToDir(ctx.gpa, branch);
+    // A bare number or a PR URL resolves via `gh` to its head branch; anything
+    // else is treated as a branch name directly, exactly as before.
+    var pr_info: ?pr.PrInfo = null;
+    defer if (pr_info) |*p| p.deinit(ctx.gpa);
+    const pr_number = pr.detectPrNumber(target);
+    if (pr_number) |n| {
+        pr_info = try resolvePr(ctx, project.dir, n);
+        if (pr_info.?.is_cross_repository) {
+            ctx.warn(
+                "cb review: PR #{s} is from a fork; origin/<branch> won't exist locally.\n" ++
+                    "  Fetch it manually (e.g. git fetch origin refs/pull/{s}/head:<local-branch>)\n" ++
+                    "  and run `cb review {s} <local-branch>` instead.\n",
+                .{ n, n, proj_key },
+            );
+            return error.ForkPrNotSupported;
+        }
+    }
+
+    const branch: []const u8 = if (pr_info) |p| p.head_ref else target;
+    const key: []u8 = if (pr_number) |n|
+        try std.fmt.allocPrint(ctx.gpa, "pr-{s}", .{n})
+    else
+        try sanitize.branchToDir(ctx.gpa, target);
     defer ctx.gpa.free(key);
     if (project.worktrees.get(key) != null) return error.WorktreeExists;
 
@@ -33,8 +56,8 @@ pub fn review(ctx: *app.Context, rest: []const []const u8) !void {
     const container = try common.worktreeContainer(ctx, project);
     defer ctx.gpa.free(container);
     std.fs.cwd().makePath(container) catch {};
-    const work_tree = try common.worktreeDir(ctx, container, branch);
-    defer ctx.gpa.free(work_tree);
+    const raw_work_tree = try common.worktreeDir(ctx, container, branch);
+    defer ctx.gpa.free(raw_work_tree);
 
     const git_dir = try engine.reviewDir(ctx, proj_key, key);
     defer ctx.gpa.free(git_dir);
@@ -46,8 +69,15 @@ pub fn review(ctx: *app.Context, rest: []const []const u8) !void {
         .base_arg = a.value(&.{"base"}),
         .no_merge_base = a.flag(&.{"no-merge-base"}),
         .git_dir = git_dir,
-        .work_tree = work_tree,
+        .work_tree = raw_work_tree,
     });
+
+    // Canonicalize now that the worktree exists, so this dir compares
+    // correctly against std.process.getCwdAlloc()'s resolved output in
+    // state/locate.zig (e.g. macOS's /tmp -> /private/tmp) — same reasoning
+    // as worktree.mk().
+    const work_tree = std.fs.cwd().realpathAlloc(ctx.gpa, raw_work_tree) catch try ctx.gpa.dupe(u8, raw_work_tree);
+    defer ctx.gpa.free(work_tree);
 
     try store.appendEvent(ctx.gpa, ctx.state_path, store.WorktreeCreated{
         .at = ctx.now_unix,
@@ -60,8 +90,15 @@ pub fn review(ctx: *app.Context, rest: []const []const u8) !void {
         .note = a.value(&.{ "n", "note" }),
         .base = a.value(&.{"base"}),
         .reviewBranch = branch,
+        .prTitle = if (pr_info) |p| p.title else null,
+        .prAuthor = if (pr_info) |p| p.author else null,
+        .prUrl = if (pr_info) |p| p.url else null,
     });
     ctx.print("review ready: {s}\n", .{work_tree});
+    if (pr_info) |p| {
+        if (p.title) |t| ctx.print("  PR: {s}\n", .{t});
+        if (p.author) |au| ctx.print("  author: {s}\n", .{au});
+    }
 
     if (a.flag(&.{"shell"})) {
         try spawnReviewShell(ctx, proj_key, key, work_tree, git_dir);
@@ -73,7 +110,12 @@ pub fn reviewLocal(ctx: *app.Context, rest: []const []const u8) !void {
     defer a.deinit();
 
     const proj_key = a.pos(0) orelse return error.MissingArgument;
-    const target_dir = a.pos(1) orelse return error.MissingArgument;
+    const raw_target_dir = a.pos(1) orelse return error.MissingArgument;
+    // Canonicalize so this compares correctly against
+    // std.process.getCwdAlloc()'s resolved output in state/locate.zig (e.g.
+    // macOS's /tmp -> /private/tmp) — same reasoning as worktree.mk().
+    const target_dir = std.fs.cwd().realpathAlloc(ctx.gpa, raw_target_dir) catch try ctx.gpa.dupe(u8, raw_target_dir);
+    defer ctx.gpa.free(target_dir);
 
     var state = try common.loadState(ctx);
     defer state.deinit();
@@ -244,6 +286,36 @@ fn resolveReviewRef(ctx: *app.Context, state: *model.State, a: *const args.Args)
     } else |_| {}
     const ref = try common.resolveRef(ctx, state, a);
     return .{ .project = ref.project, .key = ref.key, .owned = false };
+}
+
+/// Resolves a PR number via `gh pr view`. No `--repo`/`--hostname` override:
+/// `gh` infers the target host from the project's git remote, so this works
+/// against GitHub Enterprise the same way it works against github.com, as
+/// long as `gh auth login --hostname <host>` has been run once for that host.
+fn resolvePr(ctx: *app.Context, project_dir: []const u8, pr_number: []const u8) !pr.PrInfo {
+    const argv = &.{ "gh", "pr", "view", pr_number, "--json", "headRefName,title,author,url,isCrossRepository" };
+    const result = std.process.Child.run(.{
+        .allocator = ctx.gpa,
+        .argv = argv,
+        .cwd = project_dir,
+        .max_output_bytes = 1 * 1024 * 1024,
+    }) catch |err| return switch (err) {
+        error.FileNotFound => error.GhNotFound,
+        else => error.GhFailed,
+    };
+    defer ctx.gpa.free(result.stdout);
+    defer ctx.gpa.free(result.stderr);
+
+    const ok = switch (result.term) {
+        .Exited => |c| c == 0,
+        else => false,
+    };
+    if (!ok) {
+        ctx.warn("{s}", .{result.stderr});
+        return error.GhFailed;
+    }
+
+    return pr.parsePrJson(ctx.gpa, result.stdout) catch return error.GhFailed;
 }
 
 fn spawnReviewShell(ctx: *app.Context, proj: []const u8, key: []const u8, work_tree: []const u8, git_dir: []const u8) !void {

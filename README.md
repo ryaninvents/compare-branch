@@ -59,7 +59,7 @@ cb ls [<key>] [--json] [--no-status]
 cb rm [<key> <worktree-key>] [-i]
 
 # review flow
-cb review <key> <remote-branch> [-t <ticket>] [-n <note>] [--base <branch>] [--no-merge-base] [--shell]
+cb review <key> <remote-branch | PR number | PR URL> [-t <ticket>] [-n <note>] [--base <branch>] [--no-merge-base] [--shell]
 cb review-local <key> <dir>
 cb review-shell [<key> <worktree-key>] [-i]
 cb refresh [<key> <worktree-key>]   # no args inside a review shell, or inferred from $PWD
@@ -144,6 +144,21 @@ already reviewed resurfaces without discarding your progress.
 `cb review-local <key> <dir>` does the same against a live directory (e.g. AI
 output) compared to the project's base branch — and `cb done`/`review-done` never
 deletes that directory.
+
+### Reviewing a pull request
+
+Pass a bare PR number or a PR URL instead of a branch name — `cb review <key>
+123` or `cb review <key> https://github.com/o/r/pull/123` — and `cb` resolves
+it via `gh pr view` (requires the [GitHub CLI](https://cli.github.com/),
+authenticated with `gh auth login`) to its head branch, then reviews that
+branch as usual. The worktree key becomes `pr-<number>`, and the PR's title
+and author are recorded and shown by `cb ls`/`cb whereami`. `gh` infers the
+target host from the project's git remote (no `--repo`/`--hostname` is
+passed), so this works against **GitHub Enterprise** the same way it works
+against github.com, as long as you've run `gh auth login --hostname
+<your-ghe-host>` once. A PR from a fork has no `origin/<branch>` to compare
+against locally, so `cb` errors with a pointer to fetching
+`refs/pull/<n>/head` manually and reviewing that branch by name instead.
 
 Inside a review shell (`--shell` or `cb review-shell`):
 

@@ -40,6 +40,10 @@ pub const Worktree = struct {
     /// For review_local worktrees: the working directory being snapshotted.
     target_dir: ?[]const u8 = null,
     last_refreshed: ?i64 = null,
+    /// Set when this review worktree was created from a PR (`cb review <key> <PR>`).
+    pr_title: ?[]const u8 = null,
+    pr_author: ?[]const u8 = null,
+    pr_url: ?[]const u8 = null,
 };
 
 pub const Project = struct {
