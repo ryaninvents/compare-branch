@@ -1,0 +1,525 @@
+.Dd August 31, 2026
+.Dt CB 1
+.Os
+.Sh NAME
+.Nm cb
+.Nd disposable git worktree manager
+.Sh SYNOPSIS
+.Nm
+.Cm mkproject
+.Ar key
+.Op Ar dir
+.Op Fl Fl remote Ar url
+.Op Fl Fl category Ar cat
+.Op Fl Fl worktrees Ar path
+.Nm
+.Cm mk
+.Ar key worktree-key
+.Op Fl t Ar ticket
+.Op Fl Fl base Ar branch
+.Op Fl Fl branch-name Ar name
+.Op Fl n Ar note
+.Op Fl Fl no-cd
+.Op Fl Fl no-fetch
+.Op Fl Fl no-hooks
+.Nm
+.Cm cd
+.Op Ar key Op Ar worktree-key
+.Op Fl i
+.Op Fl Fl no-fetch
+.Op Fl Fl no-pull
+.Nm
+.Cm ls
+.Op Ar key
+.Op Fl Fl json
+.Op Fl Fl no-status
+.Nm
+.Cm rmproject
+.Ar key
+.Op Fl Fl delete-dir
+.Nm
+.Cm rm
+.Op Ar key Ar worktree-key
+.Op Fl i
+.Op Fl Fl force
+.Nm
+.Cm review
+.Ar key
+.Ar branch | pr-number | pr-url
+.Op Fl t Ar ticket
+.Op Fl n Ar note
+.Op Fl Fl base Ar branch
+.Op Fl Fl no-merge-base
+.Op Fl Fl shell
+.Nm
+.Cm review-local
+.Ar key dir
+.Nm
+.Cm refresh
+.Op Ar key worktree-key
+.Nm
+.Cm review-shell
+.Op Ar key Op Ar worktree-key
+.Op Fl i
+.Nm
+.Cm whereami
+.Nm
+.Cm doctor
+.Op Ar key
+.Op Fl Fl fix
+.Nm
+.Cm init
+.Cm zsh | bash
+.Nm
+.Cm config
+.Op Cm path
+.Nm
+.Fl Fl version | Fl v
+.Nm
+.Fl Fl help | Fl h
+.Sh DESCRIPTION
+.Nm
+manages disposable git worktrees across one or more registered
+.Em projects .
+A project is a git checkout registered under a short
+.Ar key ;
+each of its worktrees is registered under a
+.Ar worktree-key
+scoped to that project.
+Worktrees are meant to be thrown away:
+.Nm
+makes creating one, jumping into it, and tearing it down again a
+one-liner, and adds an isolated
+.Em review
+mode
+.Pq Xr cb-review 7
+for looking at someone else's branch or PR without touching your own
+checkout.
+.Pp
+.Nm
+ships as two pieces: the
+.Nm cb-bin
+binary, and a
+.Ic cb
+shell function that fronts it
+.Pq Cm init , below .
+A child process cannot change its parent shell's working directory or
+exit that shell, so
+.Cm cd ,
+.Cm exit ,
+and
+.Cm done
+are implemented in the shell function; every other subcommand is
+forwarded straight to
+.Nm cb-bin
+unchanged.
+Scripting against
+.Nm cb-bin
+directly works for every subcommand except those three.
+.Sh COMMANDS
+.Ss mkproject Ar key Op Ar dir
+Register a project.
+If
+.Ar dir
+is already a git repository, it is adopted as-is.
+Otherwise
+.Fl Fl remote Ar url
+is required, and
+.Nm
+clones it into
+.Ar dir .
+.Ar dir
+defaults to
+.Ar baseDir Ns / Ns Ar key
+(see
+.Xr cb-config 5 ) .
+.Fl Fl category Ar cat
+nests this project's worktrees under
+.Ar cat
+inside
+.Ic workDir
+instead of directly inside it;
+.Fl Fl worktrees Ar path
+overrides the worktree container entirely, ignoring
+.Ic workDir
+and any category.
+.Ss mk Ar key worktree-key
+Create a branch and a worktree for it.
+Fetches the project first unless
+.Fl Fl no-fetch
+is given.
+The branch name defaults to the
+.Ic branches.name
+template
+.Pq Xr cb-config 5 ,
+overridable with
+.Fl Fl branch-name Ar name ;
+the base defaults to the project's default branch, overridable with
+.Fl Fl base Ar branch .
+.Fl t Ar ticket
+and
+.Fl n Ar note
+are recorded but not otherwise interpreted, except that
+.Ar ticket
+is available to the branch-name template.
+After creation, runs any configured
+.Ic worktrees.copy
+and
+.Ic worktrees.onCreate
+post-create hooks
+.Pq Xr cb-config 5 ,
+unless
+.Fl Fl no-hooks
+is given.
+The
+.Ic cb
+shell function then changes into the new worktree unless
+.Fl Fl no-cd
+is given.
+.Ss cd Op Ar key Op Ar worktree-key
+Print, and via the
+.Ic cb
+shell function change into, a project checkout or one of its worktrees.
+With both arguments omitted, targets the project checkout for the
+worktree containing
+.Ev PWD
+(see
+.Sx CWD INFERENCE ) .
+With only
+.Ar key ,
+targets that project's checkout: fetches, then pulls, unless
+.Fl Fl no-fetch
+or
+.Fl Fl no-pull
+suppress those.
+With both arguments, targets that worktree: fetches
+.Pq unless Fl Fl no-fetch
+and reports ahead/behind divergence against its upstream, but never
+pulls.
+.Fl i
+opens an interactive picker instead
+.Pq Sx INTERACTIVE SELECTION .
+The plain
+.Cm cd-path
+alias is what the shell function actually invokes; it behaves
+identically and exists so scripts can distinguish "the thing the
+wrapper calls" from "the public name" if needed \(em in practice they
+are the same command.
+.Ss ls Op Ar key
+With no
+.Ar key ,
+list every registered project, its worktree count, and its directory.
+With
+.Ar key ,
+list that project's worktrees: kind, branch, age, and a status column
+(a
+.Cm *
+for uncommitted changes, plus
+.Cm +N Ns / Ns Cm -N
+ahead/behind upstream), followed by ticket, note, PR title/author, and
+path where recorded.
+The status column costs one or two
+.Xr git 1
+calls per worktree; pass
+.Fl Fl no-status
+to skip it on a large listing.
+.Fl Fl json
+emits the full records instead, one JSON array, for scripting.
+.Ss rmproject Ar key
+Remove a project from tracking (never touches its checkout by default).
+Refuses if the project still has registered worktrees \(em remove those
+first.
+Prompts for confirmation.
+.Fl Fl delete-dir
+also deletes the checkout directory after removal.
+.Ss rm Op Ar key Ar worktree-key
+Remove a worktree:
+.Xr git 1 Ns 's
+own
+.Ic worktree remove ,
+plus dropping it from
+.Nm Ns 's
+state.
+With no arguments, infers the target from
+.Ev PWD
+(see
+.Sx CWD INFERENCE ) .
+Before removing, refuses \(em printing an itemized summary \(em a
+worktree that has uncommitted or untracked changes, or commits not yet
+pushed to its upstream; review worktrees
+.Pq Xr cb-review 7
+are exempt, since they are throwaway by construction.
+.Fl Fl force
+bypasses this check and removes regardless.
+.Fl i
+opens an interactive picker instead
+.Pq Sx INTERACTIVE SELECTION .
+.Ss review Ar key Ar branch | pr-number | pr-url
+Check out a remote branch, or the head branch of a GitHub pull request,
+into a throwaway worktree with an isolated review repo.
+See
+.Xr cb-review 7
+for the full model;
+.Fl t , Fl n , Fl Fl base ,
+and
+.Fl Fl no-merge-base
+are documented there.
+.Fl Fl shell
+immediately opens a review shell in the new worktree, equivalent to a
+following
+.Cm review-shell
+call.
+.Ss review-local Ar key dir
+Like
+.Cm review ,
+but against a live directory
+.Pq e.g. AI-generated output
+compared to the project's base branch, instead of a remote branch.
+See
+.Xr cb-review 7 .
+.Ss refresh Op Ar key worktree-key
+Pull new upstream changes into a review's working tree without
+disturbing already-reviewed progress.
+With no arguments: inside a review shell, targets that shell's review;
+otherwise infers the target from
+.Ev PWD
+(see
+.Sx CWD INFERENCE ) .
+See
+.Xr cb-review 7 .
+.Ss review-shell Op Ar key Op Ar worktree-key
+Open an interactive shell wired to a review's isolated
+.Ev GIT_DIR Ns / Ns Ev GIT_WORK_TREE ,
+where
+.Ic git status
+shows exactly what is left to review.
+See
+.Xr cb-review 7 .
+.Fl i
+opens an interactive picker restricted to review worktrees
+.Pq Sx INTERACTIVE SELECTION .
+Inside the shell, the
+.Ic cb
+shell function additionally recognizes:
+.Bl -tag -width Ds
+.It Ic cb refresh
+No arguments needed; see above.
+.It Ic cb exit
+Confirm, then leave the shell without deleting anything.
+.It Ic cb done
+Confirm, leave the shell, and delete the worktree and its review repo
+.Pq never the target directory of a Cm review-local review .
+.El
+.Ss whereami
+Report the project key, worktree key, kind, branch, path, and base
+.Pq plus ticket / note / PR info, if recorded
+for whichever registered project or worktree contains
+.Ev PWD .
+Errors outside any registered tree; on an ambiguous match, refuses to
+guess
+.Pq Sx CWD INFERENCE .
+.Ss doctor Op Ar key
+Cross-reference the state log against
+.Ic git worktree list
+and the filesystem for the given project, or every project if
+.Ar key
+is omitted.
+The log is the only source of truth and can drift \(em a manual
+.Ic git worktree remove ,
+a deleted directory, a worktree created outside
+.Nm .
+Reports
+.Em ghost
+worktrees
+.Pq recorded but gone
+and
+.Em orphan
+worktrees
+.Pq real but unrecorded .
+Read-only by default;
+.Fl Fl fix
+appends corrective events \(em a removal for each ghost, an adoption
+for each orphan \(em never rewriting history.
+.Ss init Cm zsh | bash
+Print the
+.Ic cb
+shell function for the given shell.
+Add
+.Ic eval \&"$(cb-bin init zsh)\&"
+.Pq or Ic bash
+to your shell rc to load it without Homebrew; a Homebrew install
+sources the same file from
+.Pa share/cb
+instead
+.Pq Sx SHELL INTEGRATION .
+.Ss config Op Cm path
+With no argument, print the resolved config path followed by its
+contents, or a note that built-in defaults are in effect if no file
+exists.
+.Cm path
+prints just the path, e.g. for
+.Ic $EDITOR \&"$(cb config path)\&" .
+See
+.Xr cb-config 5 .
+.Sh CWD INFERENCE
+.Cm rm ,
+.Cm refresh ,
+and
+.Cm cd
+(project form) accept their
+.Ar key Ns / Ns Ar worktree-key
+positionals as optional and, when omitted, infer them by matching
+.Ev PWD
+against every registered project and worktree path
+.Pq the longest matching prefix wins .
+This never guesses: outside any registered project or worktree the
+command errors, and if
+.Ev PWD
+somehow matches more than one registered path equally well, the
+command errors rather than picking one.
+.Cm whereami
+performs the same lookup and reports it directly.
+.Sh INTERACTIVE SELECTION
+.Fl i ,
+on
+.Cm cd ,
+.Cm rm ,
+and
+.Cm review-shell ,
+opens a picker instead of requiring explicit positionals.
+Given a project
+.Ar key
+already, it picks only the worktree; omitted entirely, it picks the
+project first.
+Worktrees are listed freshest-created first.
+Uses
+.Xr fzf 1
+when it is on
+.Ev PATH ,
+otherwise a numbered stdin/stderr prompt \(em
+.Nm
+has no hard dependency on
+.Xr fzf 1 .
+Refuses outright, with no fallback guess, when stdin or stderr is not a
+terminal.
+.Sh SHELL INTEGRATION
+Homebrew installs the
+.Ic cb
+shell function's source under
+.Pa share/cb
+and wires it up automatically when you
+.Ic source \&"$(brew --prefix)/share/cb/cb.zsh\&"
+.Pq or Pa cb.bash
+from your shell rc, alongside tab-completion.
+Without Homebrew, either
+.Ic source
+the same files from a manually downloaded release archive, or generate
+the function on the fly with
+.Ic eval \&"$(cb-bin init zsh)\&"
+.Pq Cm init , above .
+Either way the function is named
+.Ic cb ;
+.Nm cb-bin
+is the underlying binary and is not meant to be invoked directly except
+by the function, scripts, and shell completion.
+.Sh ENVIRONMENT
+.Bl -tag -width Ds
+.It Ev CB_CONFIG_FILE
+Overrides the resolved config path
+.Pq Xr cb-config 5 .
+.It Ev CB_STATE_FILE
+Overrides the resolved state log path
+.Pq see Sx FILES .
+.It Ev CB_REVIEW
+Set by
+.Cm review-shell
+.Pq and Cm review Fl Fl shell
+to "project-key worktree-key"; read by
+.Cm refresh
+and by the
+.Ic cb
+shell function's
+.Cm exit Ns / Ns Cm done
+handling inside a review shell.
+Not meant to be set by hand.
+.It Ev SHELL
+Consulted for the interactive shell spawned by
+.Cm review-shell
+and for
+.Ic worktrees.onCreate
+hook commands; falls back to
+.Pa /bin/sh .
+.It Ev HOME , Ev XDG_CONFIG_HOME
+Used to resolve the default config and state paths
+.Pq see Sx FILES .
+.It Ev USER
+Available to the
+.Ic branches.name
+template
+.Pq Xr cb-config 5 .
+.El
+.Sh FILES
+.Bl -tag -width Ds
+.It Pa ~/.config/cb/config.json
+User config; never rewritten by
+.Nm .
+See
+.Xr cb-config 5 .
+.It Pa ~/.local/cb/state.json
+Append-only ndjson event log of every project and worktree mutation.
+Current state is derived by folding the log; earlier lines are never
+rewritten.
+.It Pa ~/.local/cb/reviews/ Ns Ar project Ns -- Ns Ar worktree Ns .git
+An isolated review repo's
+.Ev GIT_DIR ,
+one per active review
+.Pq Xr cb-review 7 .
+.El
+.Sh EXIT STATUS
+.Ex -std
+Every failure prints a one-line diagnostic prefixed
+.Ic cb: ,
+among them:
+.Bl -tag -width Ds
+.It no such project / no such worktree
+The given
+.Ar key
+or
+.Ar worktree-key
+is not registered.
+.It a project/worktree with that key already exists
+.Cm mkproject Ns / Ns Cm mk Ns / Ns Cm review
+refuse to overwrite an existing registration.
+.It current directory is not inside any registered project or worktree
+.Sx CWD INFERENCE
+found no match.
+.It current directory matches more than one registered project/worktree
+.Sx CWD INFERENCE
+found more than one match and refused to guess; pass
+.Ar key Ar worktree-key
+explicitly.
+.It worktree has uncommitted or unpushed work
+.Cm rm
+refused without
+.Fl Fl force ;
+see
+.Sx COMMANDS .
+.It interactive picker requires a terminal
+.Fl i
+was given but stdin or stderr is not a tty.
+.It gh (GitHub CLI) was not found on PATH
+.Cm review
+was given a PR number or URL but
+.Xr gh 1
+is not installed.
+.It PR is from a fork
+.Cm review
+cannot review a fork PR directly; see the printed workaround.
+.El
+.Sh SEE ALSO
+.Xr fzf 1 ,
+.Xr gh 1 ,
+.Xr git 1 ,
+.Xr git-worktree 1 ,
+.Xr cb-config 5 ,
+.Xr cb-review 7

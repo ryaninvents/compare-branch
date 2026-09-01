@@ -1,0 +1,174 @@
+.Dd August 31, 2026
+.Dt CB-REVIEW 7
+.Os
+.Sh NAME
+.Nm cb-review
+.Nd cb's isolated review model
+.Sh DESCRIPTION
+.Xr cb 1 Ns 's
+.Cm review ,
+.Cm review-local ,
+.Cm refresh ,
+and
+.Cm review-shell
+commands let you look at someone else's branch, a GitHub pull request,
+or a live directory of generated output, incrementally and without
+ever touching your own checkout's
+.Pa .git .
+The model is adapted from
+.Lk https://github.com/ryaninvents/rapid-review rapid-review .
+.Sh THE ISOLATED REVIEW REPO
+.Ic cb review Ar key branch
+creates a throwaway worktree directory holding the full content of
+.Ar branch ,
+plus a second, separate git directory \(em the
+.Em review repo
+\(em that shares the project's object database via
+.Pa objects/info/alternates
+but keeps its own
+.Ev HEAD ,
+index, and refs.
+The two are wired together for the reviewer via
+.Ev GIT_DIR
+.Pq the review repo
+and
+.Ev GIT_WORK_TREE
+.Pq the throwaway worktree
+whenever
+.Nm cb
+spawns a shell for it, so
+.Xr git 1
+commands run there see:
+.Bl -tag -width Ds
+.It Ev HEAD Pq the reviewed baseline
+Starts at
+.Ic git merge-base Ar branch Ar base ,
+where
+.Ar base
+is
+.Fl Fl base
+if given, else the project's default branch.
+.Fl Fl no-merge-base
+starts it at
+.Ar base
+directly instead \(em compare against the tip rather than the point of
+divergence.
+.It the working tree
+Always holds the
+.Em full
+content of
+.Ar branch ,
+not a diff.
+.It Ic git status
+Is therefore exactly
+.Ev HEAD
+.Pq the reviewed baseline
+compared against the full target content: exactly what is left to
+review.
+.El
+.Pp
+You review incrementally from inside a review shell
+.Pq Cm review Fl Fl shell No or Cm review-shell :
+.Ic git add
+a file to mark it reviewed,
+.Ic git commit
+to checkpoint a batch and advance
+.Ev HEAD .
+.Ic cb refresh
+fetches new upstream commits and updates
+.Em only
+the working tree
+.Pq via Ic git restore --source ,
+so amended code you already reviewed and committed resurfaces as
+changed again, without discarding your committed review progress or
+requiring a rebase.
+.Sh REVIEWING A PULL REQUEST
+.Ic cb review Ar key Ar N
+or
+.Ic cb review Ar key Ar https://github.com/o/r/pull/N
+resolves
+.Ar N
+via
+.Ic gh pr view
+.Pq requires Xr gh 1 , authenticated
+to its head branch, then reviews that branch exactly as above.
+The worktree key becomes
+.Ic pr- Ns Ar N ;
+the PR's title and author are recorded and shown by
+.Ic cb ls
+and
+.Ic cb whereami .
+No
+.Fl Fl repo Ns / Ns Fl Fl hostname
+override is passed to
+.Xr gh 1 ,
+so this resolves against whichever host the project's git remote
+points at, GitHub Enterprise included, as long as
+.Ic gh auth login --hostname Ar host
+has been run once for that host.
+.Pp
+A PR from a fork has no
+.Ic origin/ Ns Ar branch
+to compare against locally, so
+.Nm cb
+refuses with a pointer to fetching
+.Ic refs/pull/ Ns Ar N Ns /head
+manually and reviewing that local branch by name instead.
+.Sh REVIEWING A LIVE DIRECTORY
+.Ic cb review-local Ar key dir
+compares a live directory \(em not a git worktree, e.g. AI-generated
+output living anywhere on disk \(em against the project's base branch,
+using the same
+.Ev HEAD Ns -as-baseline mechanism.
+.Ic cb refresh
+on a
+.Cm review-local
+review is a no-op
+.Pq it tracks the directory live ; there is nothing to fetch .
+Unlike a remote review,
+.Ic cb done
+.Pq Cm review-done
+never deletes
+.Ar dir
+itself \(em only the review repo \(em since it is a directory you own,
+not one
+.Nm cb
+created.
+.Sh INSIDE A REVIEW SHELL
+.Ic cb review Fl Fl shell
+or
+.Ic cb review-shell
+opens
+.Ev SHELL
+in the worktree with
+.Ev GIT_DIR ,
+.Ev GIT_WORK_TREE ,
+and
+.Ev CB_REVIEW
+.Pq "project-key worktree-key"
+set.
+The
+.Ic cb
+shell function recognizes three bare verbs there, layered on top of
+its normal dispatch:
+.Bl -tag -width Ds
+.It Ic cb refresh
+Equivalent to
+.Ic cb refresh Ar key worktree-key ,
+inferred from
+.Ev CB_REVIEW .
+.It Ic cb exit
+Prompts for confirmation, then leaves the shell.
+Nothing is deleted.
+.It Ic cb done
+Prompts for confirmation, then leaves the shell and deletes the
+worktree
+.Pq unless it is a Cm review-local review
+and the review repo.
+.El
+.Sh SEE ALSO
+.Xr cb 1 ,
+.Xr gh 1 ,
+.Xr git 1 ,
+.Xr git-worktree 1 ,
+.Xr cb-config 5

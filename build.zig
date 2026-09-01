@@ -13,6 +13,18 @@ const zon: struct {
     paths: []const []const u8,
 } = @import("build.zig.zon");
 
+// One row per man page under `man/`. `section` is the conventional man
+// section directory name (`man1`, `man5`, `man7`) under `share/man/`; a new
+// user-visible command, flag, environment variable, or file is not complete
+// until `man/cb.1` (or `cb-config.5`/`cb-review.7`) documents it in the same
+// commit — see CLAUDE.md.
+const ManPage = struct { file: []const u8, section: []const u8 };
+const man_pages = [_]ManPage{
+    .{ .file = "cb.1", .section = "man1" },
+    .{ .file = "cb-config.5", .section = "man5" },
+    .{ .file = "cb-review.7", .section = "man7" },
+};
+
 // The release pipeline cross-compiles these four targets from a single
 // pinned-Zig Docker image; keep this list in sync with scripts/release.sh.
 const release_targets = [_]std.Target.Query{
@@ -49,6 +61,16 @@ pub fn build(b: *std.Build) void {
     configureModule(b, exe.root_module, options);
     b.installArtifact(exe);
 
+    // `share/man/<section>/<page>` is the standard search layout `man(1)`
+    // expects under a `-M`/`MANPATH` prefix.
+    for (man_pages) |page| {
+        b.getInstallStep().dependOn(&b.addInstallFileWithDir(
+            b.path(b.fmt("man/{s}", .{page.file})),
+            .{ .custom = b.fmt("share/man/{s}", .{page.section}) },
+            page.file,
+        ).step);
+    }
+
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());
     if (b.args) |args| run_cmd.addArgs(args);
@@ -75,7 +97,7 @@ pub fn build(b: *std.Build) void {
 
     // `zig build e2e` builds the binary then runs the hermetic e2e scripts.
     const e2e_step = b.step("e2e", "Run end-to-end tests");
-    for (&[_][]const u8{ "e2e/review_e2e.sh", "e2e/rm_safety_e2e.sh", "e2e/doctor_e2e.sh", "e2e/hooks_e2e.sh" }) |script| {
+    for (&[_][]const u8{ "e2e/review_e2e.sh", "e2e/rm_safety_e2e.sh", "e2e/doctor_e2e.sh", "e2e/hooks_e2e.sh", "e2e/man_check.sh" }) |script| {
         const e2e = b.addSystemCommand(&.{ "bash", script });
         e2e.step.dependOn(b.getInstallStep());
         e2e_step.dependOn(&e2e.step);

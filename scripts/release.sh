@@ -82,6 +82,12 @@ class Cb < Formula
     # Completion: zsh onto fpath, bash into bash_completion.d.
     zsh_completion.install "completions/_cb"
     bash_completion.install "completions/cb.bash" => "cb"
+    # Man pages. Homebrew puts share/man on MANPATH automatically, so `man cb`
+    # works with no extra setup — unlike shell integration, this needs no
+    # caveat.
+    man1.install "man/cb.1"
+    man5.install "man/cb-config.5"
+    man7.install "man/cb-review.7"
   end
 
   def caveats
@@ -120,9 +126,11 @@ for dir in "$DIST"/release/*/; do
   cp "$dir/cb-bin" "$pkg/cb-bin"
   cp "$ROOT/README.md" "$pkg/README.md" 2>/dev/null || true
   cp "$ROOT/LICENSE" "$pkg/LICENSE" 2>/dev/null || true
-  # Ship the shell integration + completion scripts the formula installs.
+  # Ship the shell integration, completion scripts, and man pages the
+  # formula installs.
   cp -R "$ROOT/shell" "$pkg/shell"
   cp -R "$ROOT/completions" "$pkg/completions"
+  cp -R "$ROOT/man" "$pkg/man"
   tar -C "$STAGE" -czf "$STAGE/$name.tar.gz" "$name"
   rm -rf "$pkg"
 done

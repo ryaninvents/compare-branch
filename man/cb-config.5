@@ -1,0 +1,174 @@
+.Dd August 31, 2026
+.Dt CB-CONFIG 5
+.Os
+.Sh NAME
+.Nm cb-config
+.Nd cb's config.json format and template DSL
+.Sh DESCRIPTION
+.Xr cb 1 Ns 's
+user config is a single JSON file, by default
+.Pa ~/.config/cb/config.json
+.Pq override with Ev CB_CONFIG_FILE ,
+honoring
+.Ev XDG_CONFIG_HOME
+if set.
+It is user-authored and
+.Nm cb
+never rewrites it \(em mutable state lives in the separate event log
+instead
+.Pq see Xr cb 1 Ns 's Sx FILES .
+Every key is optional; an absent key falls back to its built-in
+default, shown throughout this page.
+.Bd -literal -offset indent
+{
+  "workDir": [{"var": "HOME"}, "/work"],
+  "projects": { "baseDir": [{"var": "workDir"}, "/.base"] },
+  "branches": {
+    "name": [{"var": "USER"}, "/", {"date": "YYYYMMDD.HHmmss"}, "/",
+             {"join": {"delimiter": "--",
+                       "elements": [{"var": "ticket"}, {"var": "worktree-key"}]}}]
+  }
+}
+.Ed
+.Sh THE TEMPLATE DSL
+Every string-valued config key documented below is actually a
+.Em template :
+a JSON array whose elements are rendered and concatenated in order.
+A plain JSON string element is emitted literally; three object forms
+are also recognized:
+.Bl -tag -width Ds
+.It Ic {"var": Ar name }
+Resolves
+.Ar name
+in this order: a config-defined global
+.Pq currently only Ic workDir ,
+then a per-command value available in the current context
+.Pq e.g. Ic ticket , Ic worktree-key , Ic projectDir , Ic worktreeDir ,
+then an environment variable of the same name.
+An unresolved
+.Ar name
+renders as empty.
+.It Ic {"date": Ar format }
+Renders the current time in UTC using
+.Ar format ,
+a string built from the tokens
+.Ic YYYY MM DD HH mm ss ;
+any other character passes through literally.
+.It Ic {"join": {"delimiter": Ar d , "elements": [ Ns Ar ... Ns ]}}
+Renders each element the same way, drops any that render empty, and
+joins the survivors with
+.Ar d .
+Used so an absent
+.Ic ticket
+does not leave a stray delimiter in a branch name.
+.El
+.Pp
+A template that references itself, directly or through another
+template, is a configuration error
+.Pq Ic CyclicVariable .
+.Sh TOP-LEVEL KEYS
+.Bl -tag -width Ds
+.It Ic workDir
+Where worktrees live, absent a project-specific override.
+Default:
+.Ic [{"var": "HOME"}, "/work"] .
+.It Ic projects.baseDir
+Default directory for
+.Ic cb mkproject Ar key
+when no explicit
+.Ar dir
+is given:
+.Ar baseDir Ns / Ns Ar key .
+Default:
+.Ic [{"var": "workDir"}, "/.base"] .
+.It Ic branches.name
+Default branch name for
+.Ic cb mk ,
+absent
+.Fl Fl branch-name .
+Rendered with
+.Ic ticket
+and
+.Ic worktree-key
+available.
+Default renders
+.Ar $USER Ns / Ns Ar YYYYMMDD.HHmmss Ns / Ns Op Ar ticket-- Ns Ar worktree-key .
+.El
+.Sh BRANCH-TO-DIRECTORY MAPPING
+A rendered branch name becomes a worktree directory name by a fixed,
+one-way rule, not itself configurable:
+.Ic /
+becomes
+.Ic -- ,
+and any other character outside
+.Ic A-Za-z0-9._-
+collapses a run of such characters into a single
+.Ic - .
+.Sh POST-CREATE HOOKS
+.Ic cb mk
+can copy files from the project checkout into the new worktree and run
+setup commands immediately after creating it, unless
+.Fl Fl no-hooks
+is passed:
+.Bd -literal -offset indent
+{
+  "worktrees": {
+    "copy": [".env", ".env.local"],
+    "onCreate": ["pnpm install"]
+  },
+  "projects": {
+    "overrides": {
+      "myproj": { "worktrees": { "onCreate": ["make dev-setup"] } }
+    }
+  }
+}
+.Ed
+.Bl -tag -width Ds
+.It Ic worktrees.copy
+A list of template-DSL entries, each rendering to a path relative to
+the worktree root.
+.Ic projectDir
+and
+.Ic worktreeDir
+are additionally available here, alongside
+.Ic ticket
+and
+.Ic worktree-key .
+For each entry,
+.Xr cb 1
+copies that path from the project checkout into the same relative path
+in the new worktree.
+An absolute path or one containing
+.Ic ..
+is rejected; a missing source file is a warning, not a failure.
+.It Ic worktrees.onCreate
+A list of template-DSL entries, each rendering to a shell command.
+Each command runs via
+.Ic $SHELL -c
+in the new worktree, output inherited, with
+.Ev CB_PROJECT_DIR ,
+.Ev CB_PROJECT_KEY ,
+.Ev CB_WORKTREE_DIR ,
+.Ev CB_WORKTREE_KEY ,
+.Ev CB_BRANCH ,
+.Ev CB_BASE ,
+and
+.Pq if set Ev CB_TICKET
+set in its environment.
+A failing command stops the remaining
+.Ic onCreate
+commands but leaves the worktree in place.
+.It Ic projects.overrides. Ns Ar key Ns Ic .worktrees
+When present for a project
+.Ar key ,
+.Em replaces
+.Pq does not merge with
+that project's global
+.Ic worktrees.copy
+and
+.Ic worktrees.onCreate
+entirely.
+.El
+.Sh SEE ALSO
+.Xr cb 1 ,
+.Xr cb-review 7

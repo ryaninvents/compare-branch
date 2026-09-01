@@ -26,11 +26,15 @@ Tab-completion (zsh and bash) is installed automatically — for zsh it loads on
 Homebrew's `site-functions` directory is on your `fpath` (the standard Homebrew
 setup), and the `source` line additionally loads the `cb` shell function.
 
+Man pages are installed too — see `man cb`, `man cb-config`, and `man cb-review`
+for the full command, config, and review-model reference.
+
 ### Manual
 
 Download the archive for your platform from the
 [latest release](../../releases/latest) and put `cb-bin` on your `PATH`. The
-archive bundles `shell/` (the wrapper functions) and `completions/`. Source the
+archive bundles `shell/` (the wrapper functions), `completions/`, and `man/`
+(point `MANPATH` at it, or `man /path/to/man/cb.1` directly). Source the
 wrapper for your shell:
 
 ```sh
@@ -68,6 +72,7 @@ cb whereami
 cb doctor [<key>] [--fix]
 cb init <zsh|bash>
 cb config [path]
+cb --version | -v
 ```
 
 - **`mkproject`** adopts an existing checkout at `<dir>`, or clones `--remote` into
@@ -271,5 +276,6 @@ src/
   util/               path sanitization, XDG paths
 shell/                cb() wrapper functions (cb.zsh/cb.bash), embedded + installed
 completions/          zsh (_cb) and bash (cb.bash) tab-completion
+man/                  man pages (cb.1, cb-config.5, cb-review.7), installed
 e2e/                  end-to-end review tests
 ```
