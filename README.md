@@ -179,28 +179,37 @@ characters → `-`. Dates are formatted in UTC (tokens: `YYYY MM DD HH mm ss`).
 ### Post-create hooks
 
 `cb mk` can copy files from the project checkout into the new worktree
-(e.g. an untracked `.env`) via `worktrees.copy`:
+(e.g. an untracked `.env`) and run setup commands, right after creating it:
 
 ```jsonc
 {
   "worktrees": {
-    "copy": [".env", ".env.local"]
+    "copy": [".env", ".env.local"],
+    "onCreate": ["pnpm install"]
   },
   "projects": {
     "overrides": {
-      "myproj": { "worktrees": { "copy": [".env", "config/local.json"] } }
+      "myproj": { "worktrees": { "onCreate": ["make dev-setup"] } }
     }
   }
 }
 ```
 
 A project override in `projects.overrides.<key>.worktrees` **replaces** the
-global `worktrees.copy` for that project entirely — it doesn't merge with it.
-Entries are template-DSL values, with `projectDir` and `worktreeDir`
-available alongside the usual `ticket`/`worktree-key` context. Entries must
-be relative paths inside the worktree (`..` and absolute paths are
-rejected); a missing source is a warning, not a failure. `--no-hooks` on
-`cb mk` skips this.
+global `worktrees.copy`/`worktrees.onCreate` for that project entirely — it
+doesn't merge with it. Both lists are template-DSL values, with `projectDir`
+and `worktreeDir` available alongside the usual `ticket`/`worktree-key`
+context.
+
+- `copy` entries must be relative paths inside the worktree (`..` and
+  absolute paths are rejected); a missing source is a warning, not a
+  failure.
+- `onCreate` commands run via `$SHELL -c` in the new worktree, with
+  `CB_PROJECT_DIR`, `CB_PROJECT_KEY`, `CB_WORKTREE_DIR`, `CB_WORKTREE_KEY`,
+  `CB_BRANCH`, `CB_BASE`, and `CB_TICKET` set, output inherited. A failing
+  command stops the remaining hooks but leaves the worktree in place.
+
+`--no-hooks` on `cb mk` skips both.
 
 ## State
 

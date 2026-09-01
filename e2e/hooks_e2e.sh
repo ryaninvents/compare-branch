@@ -45,4 +45,19 @@ wt_dir3="$("$BIN" cd-path demo feature-z --no-fetch)"
 [ -f "$wt_dir3/.env" ] && fail "project override should have replaced the global copy list"
 assert_eq "$(cat "$wt_dir3/only-override.txt")" "override" "override-only file copied"
 
+echo "[4] worktrees.onCreate runs in the worktree with CB_* env vars set"
+printf '{"workDir":["%s/work"],"worktrees":{"onCreate":["echo \\"$CB_PROJECT_KEY $CB_WORKTREE_KEY $CB_BRANCH\\" > setup.log"]}}' "$TMP" > "$CB_CONFIG_FILE"
+"$BIN" mk demo feature-onc > /dev/null
+wt_dir4="$("$BIN" cd-path demo feature-onc --no-fetch)"
+branch="$(cd "$wt_dir4" && git rev-parse --abbrev-ref HEAD)"
+assert_eq "$(cat "$wt_dir4/setup.log")" "demo feature-onc $branch" "onCreate saw CB_* env vars"
+
+echo "[5] a failing onCreate hook stops the remaining ones but leaves the worktree"
+printf '{"workDir":["%s/work"],"worktrees":{"onCreate":["false","echo should-not-run > should-not-run.txt"]}}' "$TMP" > "$CB_CONFIG_FILE"
+"$BIN" mk demo feature-fail > /dev/null
+wt_dir5="$("$BIN" cd-path demo feature-fail --no-fetch)"
+[ -d "$wt_dir5" ] || fail "worktree should still exist after a failing hook"
+[ -f "$wt_dir5/should-not-run.txt" ] && fail "second onCreate hook should not have run"
+PASS=$((PASS+1))
+
 echo "ALL E2E PASSED ($PASS assertions)"

@@ -48,14 +48,16 @@ pub fn mk(ctx: *app.Context, rest: []const []const u8) !void {
     defer ctx.gpa.free(dir);
 
     if (!a.flag(&.{"no-hooks"})) {
-        try runCopyHooks(ctx, proj_key, .{
+        const hook_ctx = Config.HookContext{
             .project_dir = project.dir,
             .worktree_dir = dir,
             .worktree_key = wt_key,
             .branch = branch,
             .base = base,
             .ticket = ticket,
-        });
+        };
+        try runCopyHooks(ctx, proj_key, hook_ctx);
+        try runOnCreateHooks(ctx, proj_key, hook_ctx);
     }
 
     try store.appendEvent(ctx.gpa, ctx.state_path, store.WorktreeCreated{
@@ -313,4 +315,50 @@ fn isOutsideWorktree(rel: []const u8) bool {
         if (std.mem.eql(u8, seg, "..")) return true;
     }
     return false;
+}
+
+/// Run each `worktrees.onCreate` command in the new worktree via `$SHELL -c`,
+/// inheriting stdout/stderr so setup progress (e.g. `pnpm install`) is
+/// visible. A failing command stops the remaining hooks but leaves the
+/// worktree in place — it's recoverable; silently pressing on after a failed
+/// install would be worse.
+fn runOnCreateHooks(ctx: *app.Context, proj_key: []const u8, hook_ctx: Config.HookContext) !void {
+    const entries = ctx.config.worktreesOnCreate(proj_key);
+    if (entries.len == 0) return;
+
+    const shell_path = std.process.getEnvVarOwned(ctx.gpa, "SHELL") catch try ctx.gpa.dupe(u8, "/bin/sh");
+    defer ctx.gpa.free(shell_path);
+
+    var env = try std.process.getEnvMap(ctx.gpa);
+    defer env.deinit();
+    try env.put("CB_PROJECT_DIR", hook_ctx.project_dir);
+    try env.put("CB_PROJECT_KEY", proj_key);
+    try env.put("CB_WORKTREE_DIR", hook_ctx.worktree_dir);
+    try env.put("CB_WORKTREE_KEY", hook_ctx.worktree_key);
+    try env.put("CB_BRANCH", hook_ctx.branch);
+    try env.put("CB_BASE", hook_ctx.base);
+    if (hook_ctx.ticket) |t| try env.put("CB_TICKET", t);
+
+    for (entries) |entry_tmpl| {
+        const cmd = try ctx.config.renderHookEntry(ctx.gpa, entry_tmpl, hook_ctx, ctx.now_unix);
+        defer ctx.gpa.free(cmd);
+        if (cmd.len == 0) continue;
+
+        ctx.print("cb mk: running onCreate hook: {s}\n", .{cmd});
+        var child = std.process.Child.init(&.{ shell_path, "-c", cmd }, ctx.gpa);
+        child.cwd = hook_ctx.worktree_dir;
+        child.env_map = &env;
+        const term = child.spawnAndWait() catch |err| {
+            ctx.warn("cb mk: onCreate hook failed to run: {s}\n", .{@errorName(err)});
+            return;
+        };
+        const ok = switch (term) {
+            .Exited => |c| c == 0,
+            else => false,
+        };
+        if (!ok) {
+            ctx.warn("cb mk: onCreate hook failed: '{s}' (worktree left in place; remaining hooks skipped)\n", .{cmd});
+            return;
+        }
+    }
 }
