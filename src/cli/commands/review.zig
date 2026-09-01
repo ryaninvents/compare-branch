@@ -198,8 +198,12 @@ pub fn reviewShell(ctx: *app.Context, rest: []const []const u8) !void {
         const pick_project = try common.requireProject(&state, proj_key);
         wt_key = (try common.pickWorktreeKey(ctx, pick_project, isReviewKind)) orelse return error.Aborted;
     } else {
-        proj_key = a.pos(0) orelse return error.MissingArgument;
-        wt_key = a.pos(1) orelse return error.MissingArgument;
+        // With no positional args, fall back to inferring the review worktree
+        // from the current directory — same cwd-detection `refresh` and other
+        // worktree commands already rely on (common.resolveRef).
+        const ref = try common.resolveRef(ctx, &state, &a);
+        proj_key = ref.project;
+        wt_key = ref.key;
     }
 
     const project = try common.requireProject(&state, proj_key);
