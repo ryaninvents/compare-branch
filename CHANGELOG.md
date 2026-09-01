@@ -1,5 +1,21 @@
 # cb
 
+## 0.7.0
+
+### Minor Changes
+
+- 8041e7d: `cb mk` gains `--standalone`/`--no-standalone`. By default a worktree is still a linked `git worktree`, sharing the project's object database — fast to create, but its `.git` is a pointer back into the project checkout and it can never be moved or mounted anywhere alone. `--standalone` instead creates a fully independent `git clone --local` (hardlinked objects: near-instant, near-zero extra disk on the same filesystem), with `origin` pointed at the project's real remote — self-contained enough to be mounted alone, e.g. into a container volume, with nothing else present. The trade-off: a branch created in a standalone worktree isn't visible from the project checkout (no `git worktree list` entry, no `git log <branch>`) until it's pushed, or fetched from the worktree directly.
+
+  A new `worktrees.standalone` config key (respecting the existing per-project `projects.overrides` mechanism) sets the default; an explicit `--standalone`/`--no-standalone` flag always overrides it in either direction. `cb rm` and `cb doctor` both know the difference — a standalone worktree is torn down with a plain directory delete instead of `git worktree remove`, and is never compared against `git worktree list`.
+
+- b0051a8: `cb review` now checks the target out as a real, linked `git worktree` of the project repo instead of a bare directory populated by `checkout-index`. Outside the review shell, plain `git`/`gh` now work in a review worktree exactly as in any other worktree (`git log`, `git status`, `git remote`, `gh pr view --web`) — previously they either failed or silently resolved against whatever repo happened to enclose the worktrees directory. `cb review-shell`'s isolated `GIT_DIR`/`GIT_WORK_TREE` review view is unchanged: `git status` there still shows exactly what's left to review. `cb refresh` now also keeps the plain `cd` view's branch history current as it pulls in new upstream commits.
+
+  `cb rm` and `cb review-done` on a review worktree also now correctly remove both the checkout and its review repo — previously `cb rm` (as opposed to `cb review-done`) silently failed to remove either and leaked both. Removing a review worktree now goes through the same uncommitted/unpushed-work safety check as any other worktree, since it's a real worktree that can hold real commits.
+
+- 6d397ae: `cb review` gains `--standalone`/`--no-standalone`, matching `cb mk`. By default a review checkout is a linked `git worktree` and the review repo depends on the project's object database via `objects/info/alternates` — fast to set up, but neither half can be moved or mounted anywhere alone. `--standalone` instead checks the target out as an independent `git clone --local` with `origin` pointed at the project's real remote, and repacks the review repo's borrowed objects in before dropping its `objects/info/alternates`. The result: both the working tree and the review repo are self-contained, so the whole review directory — worktree, review repo, and review shell included — can be mounted alone into e.g. a container volume with nothing else present.
+
+  `--standalone`/`--no-standalone` override the same `worktrees.standalone` config key `cb mk` uses, with the same precedence: an explicit flag always wins over config in either direction.
+
 ## 0.6.0
 
 ### Minor Changes
