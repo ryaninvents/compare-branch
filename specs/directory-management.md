@@ -17,7 +17,7 @@ We use a JSON-based template syntax for string interpolation. It's a little clun
       // per-project overrides, keyed by project-key. Currently only `worktrees`
       // is recognized here, and it *replaces* (does not merge with) the
       // top-level `worktrees` for that project.
-      "<project-key>": { "worktrees": { "copy": [], "onCreate": [] } }
+      "<project-key>": { "worktrees": { "copy": [], "onCreate": [], "standalone": false } }
     }
   },
   "branches": {
@@ -25,7 +25,8 @@ We use a JSON-based template syntax for string interpolation. It's a little clun
   },
   "worktrees": {
     "copy": [], // relative paths copied from the project checkout into a new worktree
-    "onCreate": [] // shell commands run in a new worktree after copy
+    "onCreate": [], // shell commands run in a new worktree after copy
+    "standalone": false // default for `cb mk`'s --standalone/--no-standalone; see below
   }
 }
 ```
@@ -50,7 +51,7 @@ By default, worktrees are created directly in `workDir`. If `--category` is prov
 
 # Creating a new worktree
 ```bash
-cb mk <project-key> <worktree-key> [-t|--ticket <ticket_id>] [--base <branch>] [--branch-name <branch_name>] [-n|--note <note>] [--no-hooks]
+cb mk <project-key> <worktree-key> [-t|--ticket <ticket_id>] [--base <branch>] [--branch-name <branch_name>] [-n|--note <note>] [--no-hooks] [--standalone|--no-standalone]
 ```
 
 Create a new worktree for the given project. The worktree will be identified by the given key.
@@ -60,6 +61,24 @@ Create a new worktree for the given project. The worktree will be identified by 
 By default, a new branch is created from the project's default branch, using the format specified in the config. If `--branch-name` is specified, it is used instead. `-n|--note` can be used to attach an optional note to the worktree.
 
 We always keep a timestamp of when each worktree was created.
+
+By default the worktree is a linked `git worktree`: fast to create, but it shares the
+project's object database and can never be moved or mounted anywhere alone — its `.git`
+is a pointer back into the project checkout. `--standalone` instead creates a fully
+independent `git clone --local` (hardlinked objects: near-instant, near-zero extra disk
+on the same filesystem), with `origin` pointed at the project's real remote — self-contained
+enough to be mounted alone (e.g. into a container volume) with nothing else present. The
+trade-off: a branch created in a standalone worktree isn't visible from the project
+checkout (no `git worktree list` entry, no `git log <branch>`) until it's pushed, or
+fetched from the worktree directly. `--standalone`/`--no-standalone` override
+`worktrees.standalone` in either direction; an explicit flag always wins over config,
+`--no-standalone` wins if both are somehow given, and with neither flag the project's
+`worktrees.standalone` config value decides (default `false`).
+
+`cb rm` tears a standalone worktree down with a plain directory delete instead of
+`git worktree remove`, since it was never registered with the project repo to begin
+with. `cb doctor` only checks a standalone worktree for on-disk existence, never
+against `git worktree list`.
 
 After the worktree is created, we run **post-create hooks** from the
 `worktrees` config (see Config format): each `copy` entry is copied from the

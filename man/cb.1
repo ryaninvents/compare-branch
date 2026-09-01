@@ -22,6 +22,7 @@
 .Op Fl Fl no-cd
 .Op Fl Fl no-fetch
 .Op Fl Fl no-hooks
+.Op Fl Fl standalone | Fl Fl no-standalone
 .Nm
 .Cm cd
 .Op Ar key Op Ar worktree-key
@@ -181,6 +182,41 @@ The
 shell function then changes into the new worktree unless
 .Fl Fl no-cd
 is given.
+.Pp
+By default the worktree is a linked
+.Xr git-worktree 1 :
+fast to create, but it shares the project's object database and can
+never be moved or mounted anywhere alone \(em its
+.Pa .git
+is a pointer back into the project checkout.
+.Fl Fl standalone
+creates a fully independent
+.Ic git clone --local
+instead
+.Pq hardlinked objects: near-instant and near-zero extra disk on the
+same filesystem ,
+with
+.Ic origin
+pointed at the project's real remote: self-contained enough to be
+mounted alone, e.g. into a container volume, with nothing else
+present.
+The trade-off: a branch created in a standalone worktree isn't visible
+from the project checkout
+.Pq no Ic git worktree list No entry, no Ic git log Ar branch
+until it's pushed, or fetched from the worktree directly.
+.Fl Fl standalone
+and
+.Fl Fl no-standalone
+override
+.Ic worktrees.standalone
+.Pq Xr cb-config 5
+in either direction; an explicit flag always wins over config, and
+.Fl Fl no-standalone
+wins if somehow both are given.
+With neither flag, the project's
+.Ic worktrees.standalone
+config value decides, default
+.Ic false .
 .Ss cd Op Ar key Op Ar worktree-key
 Print, and via the
 .Ic cb
@@ -241,7 +277,11 @@ also deletes the checkout directory after removal.
 Remove a worktree:
 .Xr git 1 Ns 's
 own
-.Ic worktree remove ,
+.Ic worktree remove
+for a linked worktree, or a plain directory delete for a
+.Fl Fl standalone
+one
+.Pq it isn't registered with the project repo to begin with ,
 plus dropping it from
 .Nm Ns 's
 state.

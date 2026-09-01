@@ -47,6 +47,10 @@ pub const Worktree = struct {
     pr_title: ?[]const u8 = null,
     pr_author: ?[]const u8 = null,
     pr_url: ?[]const u8 = null,
+    /// True when this worktree is a standalone `git clone --local` rather than
+    /// a linked `git worktree` sharing the project's object database — self-
+    /// contained enough to be mounted alone (e.g. into a container volume).
+    standalone: bool = false,
 };
 
 pub const Project = struct {

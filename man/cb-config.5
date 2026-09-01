@@ -141,6 +141,25 @@ in the new worktree.
 An absolute path or one containing
 .Ic ..
 is rejected; a missing source file is a warning, not a failure.
+.It Ic worktrees.standalone
+Boolean, default
+.Ic false .
+When
+.Ic true ,
+.Ic cb mk
+creates a standalone
+.Ic git clone --local
+instead of a linked
+.Xr git-worktree 1 ,
+as if
+.Fl Fl standalone
+had been passed; overridden in either direction by an explicit
+.Fl Fl standalone No / Fl Fl no-standalone
+flag.
+See
+.Xr cb 1 Ns 's
+.Cm mk
+for the trade-offs.
 .It Ic worktrees.onCreate
 A list of template-DSL entries, each rendering to a shell command.
 Each command runs via
@@ -164,9 +183,10 @@ When present for a project
 .Em replaces
 .Pq does not merge with
 that project's global
-.Ic worktrees.copy
+.Ic worktrees.copy ,
+.Ic worktrees.onCreate ,
 and
-.Ic worktrees.onCreate
+.Ic worktrees.standalone
 entirely.
 .El
 .Sh SEE ALSO

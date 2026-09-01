@@ -9,10 +9,12 @@ const std = @import("std");
 pub const Entry = struct {
     key: []const u8,
     dir: []const u8,
-    /// True for kind == .work or .review: both are real linked `git worktree`
+    /// True for kind == .work or .review that are linked `git worktree`
     /// checkouts of the project repo, reconciled against `git worktree list`.
-    /// False for review_local, which points at the user's own directory —
-    /// only checked for existence on disk.
+    /// False for review_local (points at the user's own directory) and for
+    /// any standalone worktree (an independent `git clone`, not a linked
+    /// worktree of the project) — those are only checked for existence on
+    /// disk.
     is_git_worktree: bool,
     exists_on_disk: bool,
 };

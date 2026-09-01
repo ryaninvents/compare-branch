@@ -11,7 +11,7 @@ const Config = @import("../../config/config.zig").Config;
 // `cb cd`/`cd-path` resolves the directory the shell wrapper cd's into.
 
 pub fn mk(ctx: *app.Context, rest: []const []const u8) !void {
-    var a = try args.parse(ctx.gpa, rest, &.{ "no-fetch", "no-hooks" });
+    var a = try args.parse(ctx.gpa, rest, &.{ "no-fetch", "no-hooks", "standalone", "no-standalone" });
     defer a.deinit();
 
     const proj_key = a.pos(0) orelse return error.MissingArgument;
@@ -24,6 +24,7 @@ pub fn mk(ctx: *app.Context, rest: []const []const u8) !void {
 
     const ticket = a.value(&.{ "t", "ticket" });
     const note = a.value(&.{ "n", "note" });
+    const standalone = resolveStandalone(ctx, &a, proj_key);
 
     if (!a.flag(&.{"no-fetch"})) fetch(ctx, project.dir);
 
@@ -40,7 +41,11 @@ pub fn mk(ctx: *app.Context, rest: []const []const u8) !void {
     const raw_dir = try common.worktreeDir(ctx, container, branch);
     defer ctx.gpa.free(raw_dir);
 
-    try addWorktree(ctx, project.dir, branch, raw_dir, base);
+    if (standalone) {
+        try addStandaloneWorktree(ctx, project, branch, raw_dir, base);
+    } else {
+        try addWorktree(ctx, project.dir, branch, raw_dir, base);
+    }
 
     // Canonicalize now that the worktree exists, so this dir compares
     // correctly against std.process.getCwdAlloc()'s resolved output in
@@ -71,8 +76,18 @@ pub fn mk(ctx: *app.Context, rest: []const []const u8) !void {
         .ticket = ticket,
         .note = note,
         .base = base,
+        .standalone = if (standalone) true else null,
     });
     ctx.print("created worktree '{s}' on {s}\n{s}\n", .{ wt_key, branch, dir });
+}
+
+/// Explicit `--standalone`/`--no-standalone` always wins over config, in
+/// either direction; falls back to `worktrees.standalone`
+/// (`cb-config(5)`), default `false`.
+fn resolveStandalone(ctx: *app.Context, a: *const args.Args, proj_key: []const u8) bool {
+    if (a.flag(&.{"no-standalone"})) return false;
+    if (a.flag(&.{"standalone"})) return true;
+    return ctx.config.worktreesStandalone(proj_key);
 }
 
 fn resolveBranchName(
@@ -97,6 +112,52 @@ fn addWorktree(ctx: *app.Context, project_dir: []const u8, branch: []const u8, d
         ctx.warn("{s}", .{out.stderr});
         return error.GitFailed;
     }
+}
+
+/// A standalone worktree is a full, independent repo — `git clone --local`
+/// (hardlinked objects: near-instant, near-zero disk on the same filesystem)
+/// rather than a linked `git worktree` sharing the project's object database
+/// — so it survives being mounted alone (e.g. into a container volume) with
+/// nothing else present. Trade-off: a branch created here isn't visible from
+/// the project checkout (no `git worktree list` entry, no `git log <branch>`)
+/// until pushed or fetched from.
+fn addStandaloneWorktree(ctx: *app.Context, project: *const model.Project, branch: []const u8, dir: []const u8, base: []const u8) !void {
+    // Resolve base to a sha in the project repo first: the clone (--no-checkout,
+    // no local branches yet) may not have `base` itself as a resolvable ref.
+    const base_sha = try ctx.git.capture(project.dir, &.{ "rev-parse", base });
+    defer ctx.gpa.free(base_sha);
+
+    var clone_out = try ctx.git.run(null, &.{ "clone", "--local", "--no-checkout", project.dir, dir });
+    defer clone_out.deinit();
+    if (!clone_out.ok()) {
+        ctx.warn("{s}", .{clone_out.stderr});
+        return error.GitFailed;
+    }
+
+    var checkout_out = try ctx.git.run(dir, &.{ "checkout", "-b", branch, base_sha });
+    defer checkout_out.deinit();
+    if (!checkout_out.ok()) {
+        ctx.warn("{s}", .{checkout_out.stderr});
+        return error.GitFailed;
+    }
+
+    if (try projectOriginUrl(ctx, project)) |url| {
+        defer ctx.gpa.free(url);
+        var seturl_out = ctx.git.run(dir, &.{ "remote", "set-url", "origin", url }) catch return;
+        seturl_out.deinit();
+    }
+}
+
+/// The project's real remote URL, for pointing a standalone clone's `origin`
+/// at it instead of the project's local path (which is meaningless once the
+/// clone is moved or mounted elsewhere). Prefers the recorded project remote;
+/// falls back to querying the project checkout's own `origin` directly.
+fn projectOriginUrl(ctx: *app.Context, project: *const model.Project) !?[]u8 {
+    if (project.remote) |r| return try ctx.gpa.dupe(u8, r);
+    var out = ctx.git.run(project.dir, &.{ "remote", "get-url", "origin" }) catch return null;
+    defer out.deinit();
+    if (!out.ok()) return null;
+    return try ctx.gpa.dupe(u8, out.line());
 }
 
 pub fn rm(ctx: *app.Context, rest: []const []const u8) !void {
@@ -147,10 +208,18 @@ pub fn rm(ctx: *app.Context, rest: []const []const u8) !void {
 }
 
 /// review_local's dir is the user's own directory (never a git worktree of the
-/// project) — never run `git worktree remove` against it. .work and .review
-/// are both real linked worktrees of the project repo.
+/// project) — never run `git worktree remove` against it. A standalone
+/// worktree is an independent `git clone`, not a linked worktree of the
+/// project repo, so it's torn down with a plain directory delete instead.
+/// .work and .review that aren't standalone are real linked worktrees.
 fn removeWorktreeDir(ctx: *app.Context, project: *const model.Project, wt: *const model.Worktree, force: bool) !void {
     if (wt.kind == .review_local) return;
+
+    if (wt.standalone) {
+        std.fs.cwd().deleteTree(wt.dir) catch |e|
+            ctx.warn("warning: could not remove standalone worktree dir: {s}\n", .{@errorName(e)});
+        return;
+    }
 
     const remove_args: []const []const u8 = if (force)
         &.{ "worktree", "remove", "--force", wt.dir }

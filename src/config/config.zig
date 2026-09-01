@@ -153,6 +153,17 @@ pub const Config = struct {
         return asList(self.worktreesField(project_key, "onCreate"));
     }
 
+    /// `worktrees.standalone`: project override wins over the global default;
+    /// unset anywhere means `false` (a linked `git worktree`/review-repo
+    /// checkout, sharing the project's object database — the pre-standalone
+    /// behavior) rather than a self-contained clone.
+    pub fn worktreesStandalone(self: *Config, project_key: []const u8) bool {
+        return switch (self.worktreesField(project_key, "standalone")) {
+            .bool => |b| b,
+            else => false,
+        };
+    }
+
     fn worktreesField(self: *Config, project_key: []const u8, field: []const u8) std.json.Value {
         if (navigate(self.user.value, &.{ "projects", "overrides", project_key, "worktrees", field })) |v| return v;
         if (navigate(self.user.value, &.{ "worktrees", field })) |v| return v;

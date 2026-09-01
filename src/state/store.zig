@@ -59,6 +59,7 @@ pub const WorktreeCreated = struct {
     prTitle: ?[]const u8 = null,
     prAuthor: ?[]const u8 = null,
     prUrl: ?[]const u8 = null,
+    standalone: ?bool = null,
 };
 
 pub const WorktreeRemoved = struct {
@@ -146,6 +147,7 @@ fn applyEvent(state: *model.State, value: std.json.Value) !void {
             .pr_title = try dupOpt(a, strField(obj, "prTitle")),
             .pr_author = try dupOpt(a, strField(obj, "prAuthor")),
             .pr_url = try dupOpt(a, strField(obj, "prUrl")),
+            .standalone = boolField(obj, "standalone") orelse false,
         };
         try project.worktrees.put(try a.dupe(u8, key), wt);
         return;
