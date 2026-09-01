@@ -1,5 +1,24 @@
 # cb
 
+## 0.5.0
+
+### Minor Changes
+
+- 16b9cc2: Add `cb --version` (`-v`), which prints the version cb was built from (`build.zig.zon`'s `.version`, the same value the release pipeline stamps into the tag).
+- 3a163ad: Add `cb get-permalink <path>[:<line>[-<line>]]`, which prints a GitHub permalink for a file — and optionally a line or range — pinned to the current `HEAD` so the linked lines can't shift under the reader.
+
+  - Accepts the same `<path>:<line>` / `<path>:<start>-<end>` argument form as `gh browse`, so the two are copy-pasteable between each other. A colon that isn't a line spec (`notes:draft.md`) stays part of the path.
+  - Paths are resolved against the repository root rather than the current directory, so `cb get-permalink main.zig:10` from `src/` and `cb get-permalink src/main.zig:10` from the root produce the same link. (`gh browse` resolves against the cwd, where the second spelling silently yields `src/src/main.zig` with a zero exit status.)
+  - Only the URL is written to stdout, so the command composes: `cb get-permalink src/main.zig:10-20 | pbcopy`. Every diagnostic goes to stderr.
+  - Warns when `HEAD` isn't pushed to any remote, since that link 404s until it is. Exits non-zero when the path doesn't exist at `HEAD` — but prints the URL anyway, because knowing what it would have been is what makes the message actionable.
+  - `?plain=1` is kept for Markdown, where GitHub needs it for line anchors to resolve, and dropped everywhere else.
+  - `--json` emits `url`, `commit`, `path`, `startLine`, `endLine`, `pushed` and `existsAtCommit`.
+  - Needs no registered project — it works in any GitHub checkout. `gh` resolves the host and owner/repo from the git remote, so GitHub Enterprise works on the same terms as `cb review`.
+
+  Also extracts the inline `gh` subprocess spawn in `cb review` into a small `github/gh.zig` wrapper alongside `git/git.zig`, now that there are two call sites.
+
+- 6096c36: Ship man pages (`cb(1)`, `cb-config(5)`, `cb-review(7)`) covering every command, the config template DSL and post-create hooks, and the isolated review model, and install them via Homebrew and the manual release archive. `zig build e2e` now cross-checks every dispatched command against `man/cb.1` and lints the pages with `mandoc` when it's available, so an undocumented command fails the build rather than just review.
+
 ## 0.4.0
 
 ### Minor Changes
