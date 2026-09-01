@@ -69,6 +69,7 @@ cb review-shell [<key> <worktree-key>] [-i]
 cb refresh [<key> <worktree-key>]   # no args inside a review shell, or inferred from $PWD
 
 cb whereami
+cb get-permalink <path>[:<line>[-<line>]] [--json]
 cb doctor [<key>] [--fix]
 cb init <zsh|bash>
 cb config [path]
@@ -97,6 +98,15 @@ cb --version | -v
   directory — inferred by matching `$PWD` against every registered project and
   worktree dir. Outside any registered tree it errors; if two registered dirs
   somehow tie, it refuses to guess and errors instead.
+- **`get-permalink`** prints a GitHub permalink for a file, pinned to the
+  current `HEAD` so the lines can't shift: `cb get-permalink src/main.zig:10-20`.
+  Paths are resolved against the repo root, so the same file gets the same link
+  from any directory. Only the URL goes to stdout (`| pbcopy` works); an
+  unpushed `HEAD` or a file missing at `HEAD` is reported on stderr, and the
+  latter also exits non-zero — the link is printed either way. `--json` emits
+  the URL plus commit, path, line range, and both of those checks. Needs `gh`,
+  which resolves the host and owner/repo from the git remote, so GitHub
+  Enterprise works on the same terms as `cb review`.
 - **`ls <key>`** shows branch, age, and a status column (`*` dirty, `+N`/`-N`
   ahead/behind upstream) per worktree; the status column costs a couple of
   `git` calls per worktree, so pass `--no-status` to skip it on a large

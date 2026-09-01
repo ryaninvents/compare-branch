@@ -36,6 +36,7 @@ _cb() {
     'init:print shell integration (zsh|bash)'
     'config:show config path or value'
     'whereami:show project/worktree info for the current directory'
+    'get-permalink:print a GitHub permalink for a file and line range'
     'doctor:reconcile state against git worktree list and disk'
     'exit:leave a review shell'
     'done:leave a review shell and delete the worktree'
@@ -71,6 +72,11 @@ _cb() {
               refresh) _cb_worktrees "$line[2]" ;;
             esac
           fi
+          ;;
+        get-permalink)
+          # <path>[:<line>[-<line>]] — complete the path part; the line suffix
+          # is typed by hand.
+          _arguments '--json[emit JSON]' '1:file:_files'
           ;;
         init)
           _values 'shell' zsh bash

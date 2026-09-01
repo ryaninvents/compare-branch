@@ -15,6 +15,10 @@ Choose the bump type:
 
 Commit the generated `.changeset/*.md` file in the same PR as the change. Do not merge without a changeset for any non-trivial change.
 
+**Never run `changeset version` locally.** Releases are owned by `.github/workflows/release.yml`, which runs it on the remote, syncs the version into `build.zig.zon`, commits the bump and tags. Running it locally desyncs `package.json`/`CHANGELOG.md` from the tags — that is how `0.4.0` came to be written into the changelog with no `v0.4.0` tag ever existing. Write `.changeset/*.md` files and nothing else.
+
+**Ask before releasing.** After finishing a feature, ask whether to cut a release (`gh workflow run release.yml`) rather than doing it unprompted: it publishes a public GitHub release and pushes a Homebrew formula to `ryaninvents/homebrew-tap`.
+
 ## A feature is not done until its man page is
 
 `man/` (`cb.1`, `cb-config.5`, `cb-review.7`) is the reference a user who has *installed* `cb` — rather than cloned this repository — can actually reach with `man cb`. It is not optional polish alongside `--help`: a new user-visible command, flag, environment variable, or file is not complete until the relevant page is edited **in the same commit**. A changed or removed feature gets its man page entry changed or deleted in that same commit — a stale page is worse than no page, since it's the one an installed user actually trusts. `--help` (`src/cli/app.zig`'s `usage`) stays a terse synopsis; it points at the man pages rather than duplicating their content, so the two can't independently drift.

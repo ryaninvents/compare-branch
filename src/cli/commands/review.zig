@@ -7,6 +7,7 @@ const sanitize = @import("../../util/sanitize.zig");
 const engine = @import("../../review/engine.zig");
 const common = @import("common.zig");
 const pr = @import("../../review/pr.zig");
+const gh = @import("../../github/gh.zig");
 
 // Review-flow commands. `review`/`review-local` create a review worktree and its
 // isolated review repo; `refresh` pulls new changes into the batch; `review-shell`
@@ -293,29 +294,14 @@ fn resolveReviewRef(ctx: *app.Context, state: *model.State, a: *const args.Args)
 /// against GitHub Enterprise the same way it works against github.com, as
 /// long as `gh auth login --hostname <host>` has been run once for that host.
 fn resolvePr(ctx: *app.Context, project_dir: []const u8, pr_number: []const u8) !pr.PrInfo {
-    const argv = &.{ "gh", "pr", "view", pr_number, "--json", "headRefName,title,author,url,isCrossRepository" };
-    const result = std.process.Child.run(.{
-        .allocator = ctx.gpa,
-        .argv = argv,
-        .cwd = project_dir,
-        .max_output_bytes = 1 * 1024 * 1024,
-    }) catch |err| return switch (err) {
-        error.FileNotFound => error.GhNotFound,
-        else => error.GhFailed,
-    };
-    defer ctx.gpa.free(result.stdout);
-    defer ctx.gpa.free(result.stderr);
-
-    const ok = switch (result.term) {
-        .Exited => |c| c == 0,
-        else => false,
-    };
-    if (!ok) {
-        ctx.warn("{s}", .{result.stderr});
+    var out = try gh.run(ctx.gpa, project_dir, &.{ "pr", "view", pr_number, "--json", "headRefName,title,author,url,isCrossRepository" });
+    defer out.deinit();
+    if (!out.ok()) {
+        ctx.warn("{s}", .{out.stderr});
         return error.GhFailed;
     }
 
-    return pr.parsePrJson(ctx.gpa, result.stdout) catch return error.GhFailed;
+    return pr.parsePrJson(ctx.gpa, out.stdout) catch return error.GhFailed;
 }
 
 fn spawnReviewShell(ctx: *app.Context, proj: []const u8, key: []const u8, work_tree: []const u8, git_dir: []const u8) !void {

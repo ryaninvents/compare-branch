@@ -64,6 +64,10 @@
 .Nm
 .Cm whereami
 .Nm
+.Cm get-permalink
+.Ar path[:line[-line]]
+.Op Fl Fl json
+.Nm
 .Cm doctor
 .Op Ar key
 .Op Fl Fl fix
@@ -318,6 +322,65 @@ for whichever registered project or worktree contains
 Errors outside any registered tree; on an ambiguous match, refuses to
 guess
 .Pq Sx CWD INFERENCE .
+.Ss get-permalink Ar path[:line[-line]] Op Fl Fl json
+Print a GitHub permalink for
+.Ar path ,
+pinned to the current
+.Ic HEAD
+commit so the linked lines cannot shift under the reader.
+An optional
+.Ar line
+or
+.Ar line Ns - Ns Ar line
+range becomes a
+.Ic #L Ns Ar n
+or
+.Ic #L Ns Ar n Ns -L Ns Ar n
+anchor.
+.Pp
+.Ar path
+is resolved relative to the current directory and rewritten relative to
+the repository root, so
+.Ic cb get-permalink main.zig:10
+from
+.Pa src/
+and
+.Ic cb get-permalink src/main.zig:10
+from the root name the same file.
+Unlike most commands this needs no registered project \(em it works in
+any GitHub checkout.
+.Pp
+The URL is written to standard output and nothing else is, so the
+command composes
+.Pq Ic cb get-permalink src/main.zig:10\-20 | pbcopy .
+Warnings and errors go to standard error.
+If
+.Ic HEAD
+has not been pushed the link is still printed, with a warning that it
+will 404 until it is.
+If
+.Ar path
+does not exist at
+.Ic HEAD
+the link is
+.Em also
+still printed \(em knowing what it would have been is what makes the
+message useful \(em but the exit status is non-zero.
+.Pp
+.Fl Fl json
+prints an object instead:
+.Ic url , commit , path , startLine , endLine , pushed
+and
+.Ic existsAtCommit .
+.Pp
+Requires
+.Xr gh 1 ,
+which resolves the host and owner/repo from the git remote \(em so this
+works against GitHub Enterprise on the same terms as
+.Cm review .
+Only that resolution is delegated;
+.Nm
+builds the path, query and anchor itself.
 .Ss doctor Op Ar key
 Cross-reference the state log against
 .Ic git worktree list
@@ -509,9 +572,22 @@ see
 was given but stdin or stderr is not a tty.
 .It gh (GitHub CLI) was not found on PATH
 .Cm review
-was given a PR number or URL but
+was given a PR number or URL, or
+.Cm get-permalink
+was run, but
 .Xr gh 1
 is not installed.
+.It invalid line spec
+.Cm get-permalink
+was given a malformed line spec.
+Line numbers are 1-based, and a range may not run backwards.
+.It path is outside the current git repository
+.Cm get-permalink
+was given a path that does not resolve inside the repository.
+.It file does not exist at HEAD
+.Cm get-permalink
+resolved a path that is untracked or not yet committed.
+The URL is still printed.
 .It PR is from a fork
 .Cm review
 cannot review a fork PR directly; see the printed workaround.

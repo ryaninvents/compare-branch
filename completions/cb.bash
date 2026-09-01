@@ -7,7 +7,7 @@ _cb() {
   cur="${COMP_WORDS[COMP_CWORD]}"
   local cmd="${COMP_WORDS[1]}"
 
-  local subcommands="mkproject mk cd ls rmproject rm review review-local refresh review-shell init config whereami doctor exit done"
+  local subcommands="mkproject mk cd ls rmproject rm review review-local refresh review-shell init config whereami get-permalink doctor exit done"
 
   # Completing the subcommand itself.
   if [ "$COMP_CWORD" -eq 1 ]; then
@@ -18,6 +18,11 @@ _cb() {
   case "$cmd" in
     init)
       COMPREPLY=( $(compgen -W "zsh bash" -- "$cur") )
+      ;;
+    get-permalink)
+      # <path>[:<line>[-<line>]] — complete the path; the line suffix is typed
+      # by hand, so -o filenames is not worth losing --json completion over.
+      COMPREPLY=( $(compgen -W "--json" -- "$cur") $(compgen -f -- "$cur") )
       ;;
     cd|ls|rm|rmproject|mk|review|review-local|refresh|review-shell|doctor)
       if [ "$COMP_CWORD" -eq 2 ]; then

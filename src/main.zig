@@ -46,4 +46,5 @@ test {
     _ = @import("state/locate.zig");
     _ = @import("state/doctor.zig");
     _ = @import("review/pr.zig");
+    _ = @import("github/permalink.zig");
 }
