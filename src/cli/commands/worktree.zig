@@ -34,10 +34,16 @@ pub fn mk(ctx: *app.Context, rest: []const []const u8) !void {
     defer ctx.gpa.free(container);
     std.fs.cwd().makePath(container) catch {};
 
-    const dir = try common.worktreeDir(ctx, container, branch);
-    defer ctx.gpa.free(dir);
+    const raw_dir = try common.worktreeDir(ctx, container, branch);
+    defer ctx.gpa.free(raw_dir);
 
-    try addWorktree(ctx, project.dir, branch, dir, base);
+    try addWorktree(ctx, project.dir, branch, raw_dir, base);
+
+    // Canonicalize now that the worktree exists, so this dir compares
+    // correctly against std.process.getCwdAlloc()'s resolved output in
+    // state/locate.zig (e.g. macOS's /tmp -> /private/tmp).
+    const dir = std.fs.cwd().realpathAlloc(ctx.gpa, raw_dir) catch try ctx.gpa.dupe(u8, raw_dir);
+    defer ctx.gpa.free(dir);
 
     try store.appendEvent(ctx.gpa, ctx.state_path, store.WorktreeCreated{
         .at = ctx.now_unix,

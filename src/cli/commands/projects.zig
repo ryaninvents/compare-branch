@@ -19,10 +19,16 @@ pub fn mkproject(ctx: *app.Context, rest: []const []const u8) !void {
     defer state.deinit();
     if (state.getProject(key) != null) return error.ProjectExists;
 
-    const dir = try resolveDir(ctx, &a, key);
-    defer ctx.gpa.free(dir);
+    const raw_dir = try resolveDir(ctx, &a, key);
+    defer ctx.gpa.free(raw_dir);
 
-    try ensureCheckout(ctx, dir, remote);
+    try ensureCheckout(ctx, raw_dir, remote);
+
+    // Canonicalize once the checkout exists so this dir compares correctly
+    // against std.process.getCwdAlloc()'s output (which resolves symlinked
+    // path components, e.g. macOS's /tmp -> /private/tmp) in state/locate.zig.
+    const dir = std.fs.cwd().realpathAlloc(ctx.gpa, raw_dir) catch try ctx.gpa.dupe(u8, raw_dir);
+    defer ctx.gpa.free(dir);
 
     try store.appendEvent(ctx.gpa, ctx.state_path, store.ProjectCreated{
         .at = ctx.now_unix,

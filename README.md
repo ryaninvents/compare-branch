@@ -64,6 +64,7 @@ cb review-local <key> <dir>
 cb review-shell <key> <worktree-key>
 cb refresh [<key> <worktree-key>]   # no args inside a review shell
 
+cb whereami
 cb init <zsh|bash>
 cb config [path]
 ```
@@ -74,6 +75,10 @@ cb config [path]
   `branches.name` template (overridable with `--branch-name`); the base defaults to
   the project's default branch.
 - **`cd`** prints/changes to a project checkout or one of its worktrees.
+- **`whereami`** reports the project, worktree, branch, and base for the current
+  directory — inferred by matching `$PWD` against every registered project and
+  worktree dir. Outside any registered tree it errors; if two registered dirs
+  somehow tie, it refuses to guess and errors instead.
 
 ## Reviews
 

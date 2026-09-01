@@ -35,6 +35,7 @@ _cb() {
     'review-shell:open a review shell for a worktree'
     'init:print shell integration (zsh|bash)'
     'config:show config path or value'
+    'whereami:show project/worktree info for the current directory'
     'exit:leave a review shell'
     'done:leave a review shell and delete the worktree'
   )

@@ -7,7 +7,7 @@ _cb() {
   cur="${COMP_WORDS[COMP_CWORD]}"
   local cmd="${COMP_WORDS[1]}"
 
-  local subcommands="mkproject mk cd ls rmproject rm review review-local refresh review-shell init config exit done"
+  local subcommands="mkproject mk cd ls rmproject rm review review-local refresh review-shell init config whereami exit done"
 
   # Completing the subcommand itself.
   if [ "$COMP_CWORD" -eq 1 ]; then

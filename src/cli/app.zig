@@ -8,6 +8,7 @@ const review = @import("commands/review.zig");
 const shell = @import("commands/shell.zig");
 const config_cmd = @import("commands/config_cmd.zig");
 const complete_cmd = @import("commands/complete.zig");
+const context_cmd = @import("commands/context.zig");
 
 // Wiring point: holds the resolved dependencies every command needs and routes
 // argv[1] to a handler. Composition (constructing Config/Git/paths) happens in
@@ -45,6 +46,7 @@ pub const usage =
     \\  cb review-local <key> <dir>
     \\  cb refresh [<key> <worktree-key>]
     \\  cb review-shell <key> <worktree-key>
+    \\  cb whereami
     \\  cb init <zsh|bash>
     \\  cb config [path]
     \\
@@ -78,6 +80,7 @@ fn dispatch(ctx: *Context, cmd: []const u8, rest: []const []const u8) !void {
     if (eq(cmd, "review-shell")) return review.reviewShell(ctx, rest);
     if (eq(cmd, "review-done")) return review.reviewDone(ctx, rest);
     if (eq(cmd, "review-confirm-exit")) return review.confirmExit(ctx, rest);
+    if (eq(cmd, "whereami")) return context_cmd.whereami(ctx, rest);
     if (eq(cmd, "init")) return shell.init(ctx, rest);
     if (eq(cmd, "__complete")) return complete_cmd.complete(ctx, rest);
     if (eq(cmd, "config")) return config_cmd.config(ctx, rest);
@@ -107,6 +110,8 @@ fn errorMessage(err: anyerror) []const u8 {
         error.GitNotFound => "git was not found on PATH",
         error.NoHome => "could not determine HOME",
         error.Aborted => "aborted",
+        error.NotInWorktree => "current directory is not inside any registered project or worktree",
+        error.AmbiguousContext => "current directory matches more than one registered project/worktree — pass <key> <worktree-key> explicitly",
         else => @errorName(err),
     };
 }
