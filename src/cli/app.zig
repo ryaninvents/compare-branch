@@ -38,7 +38,7 @@ pub const usage =
     \\Usage:
     \\  cb mkproject <key> [<dir>] [--remote <url>] [--category <cat>] [--worktrees <path>]
     \\  cb mk <key> <worktree-key> [-t <ticket>] [--base <branch>] [--branch-name <name>] [-n <note>] [--no-cd] [--no-fetch]
-    \\  cb cd [<key> [<worktree-key>]] [--no-fetch] [--no-pull]
+    \\  cb cd [<key> [<worktree-key>]] [-i] [--no-fetch] [--no-pull]
     \\  cb ls [<key>]
     \\  cb rmproject <key> [--delete-dir]
     \\  cb rm [<key> <worktree-key>] [--force]
@@ -112,6 +112,7 @@ fn errorMessage(err: anyerror) []const u8 {
         error.Aborted => "aborted",
         error.NotInWorktree => "current directory is not inside any registered project or worktree",
         error.AmbiguousContext => "current directory matches more than one registered project/worktree — pass <key> <worktree-key> explicitly",
+        error.NotInteractive => "interactive picker requires a terminal (stdin/stderr must be a tty)",
         else => @errorName(err),
     };
 }

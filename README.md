@@ -54,7 +54,7 @@ forwards straight to `cb-bin`.
 ```sh
 cb mkproject <key> [<dir>] [--remote <url>] [--category <cat>] [--worktrees <path>]
 cb mk <key> <worktree-key> [-t <ticket>] [--base <branch>] [--branch-name <name>] [-n <note>]
-cb cd [<key> [<worktree-key>]]
+cb cd [<key> [<worktree-key>]] [-i]
 cb ls [<key>]
 cb rm [<key> <worktree-key>]
 
@@ -76,6 +76,10 @@ cb config [path]
   the project's default branch.
 - **`cd`** prints/changes to a project checkout or one of its worktrees. With no
   args, it goes to the project checkout for the worktree containing `$PWD`.
+  `-i` picks interactively — `cb cd -i` picks a project then a worktree; `cb cd
+  <key> -i` picks a worktree within that project. Uses `fzf` when it's on
+  `PATH`, otherwise a numbered prompt; refuses (never guesses) outside a
+  terminal.
 - **`rm`** with no args infers the worktree containing `$PWD` (both `<key>` and
   `<worktree-key>` must be given together, or omitted together). `refresh` does
   the same outside a review shell.

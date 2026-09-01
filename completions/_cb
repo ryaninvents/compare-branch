@@ -53,10 +53,17 @@ _cb() {
         cd|ls|rm|rmproject|mk|review|review-local|refresh|review-shell)
           # First arg after these subcommands is a project key.
           if (( CURRENT == 2 )); then
+            case "$line[1]" in
+              cd) _values 'option' '-i[interactive fzf picker]' ;;
+            esac
             _cb_projects
           elif (( CURRENT == 3 )); then
             case "$line[1]" in
-              cd|rm|review-shell|refresh) _cb_worktrees "$line[2]" ;;
+              cd)
+                _values 'option' '-i[interactive fzf picker]'
+                _cb_worktrees "$line[2]"
+                ;;
+              rm|review-shell|refresh) _cb_worktrees "$line[2]" ;;
             esac
           fi
           ;;

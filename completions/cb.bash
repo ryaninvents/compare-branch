@@ -23,12 +23,18 @@ _cb() {
       if [ "$COMP_CWORD" -eq 2 ]; then
         local projects
         projects="$(command cb-bin __complete projects 2>/dev/null)"
+        case "$cmd" in
+          cd) projects="-i $projects" ;;
+        esac
         COMPREPLY=( $(compgen -W "$projects" -- "$cur") )
       elif [ "$COMP_CWORD" -eq 3 ]; then
         case "$cmd" in
           cd|rm|review-shell|refresh)
             local worktrees
             worktrees="$(command cb-bin __complete worktrees "${COMP_WORDS[2]}" 2>/dev/null)"
+            case "$cmd" in
+              cd) worktrees="-i $worktrees" ;;
+            esac
             COMPREPLY=( $(compgen -W "$worktrees" -- "$cur") )
             ;;
         esac

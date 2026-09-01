@@ -3,6 +3,8 @@ const app = @import("../app.zig");
 const args = @import("../args.zig");
 const store = @import("../../state/store.zig");
 const common = @import("common.zig");
+const picker = @import("../picker.zig");
+const model = @import("../../state/model.zig");
 
 // `cb mk` creates a branch + git worktree for a project; `cb rm` tears one down;
 // `cb cd`/`cd-path` resolves the directory the shell wrapper cd's into.
@@ -117,15 +119,31 @@ pub fn rm(ctx: *app.Context, rest: []const []const u8) !void {
 }
 
 pub fn cdPath(ctx: *app.Context, rest: []const []const u8) !void {
-    var a = try args.parse(ctx.gpa, rest, &.{ "no-fetch", "no-pull" });
+    var a = try args.parse(ctx.gpa, rest, &.{ "no-fetch", "no-pull", "i" });
     defer a.deinit();
 
     var state = try common.loadState(ctx);
     defer state.deinit();
-    const proj_key = try common.resolveProjectKey(ctx, &state, &a);
+
+    const interactive = a.flag(&.{"i"});
+    const no_fetch = a.flag(&.{"no-fetch"});
+
+    const proj_key = if (interactive and a.pos(0) == null)
+        (try pickProjectKey(ctx, &state)) orelse return error.Aborted
+    else
+        try common.resolveProjectKey(ctx, &state, &a);
     const project = try common.requireProject(&state, proj_key);
 
-    const no_fetch = a.flag(&.{"no-fetch"});
+    if (interactive) {
+        const wt_key = (try pickWorktreeKey(ctx, project)) orelse return error.Aborted;
+        const wt = project.worktrees.get(wt_key) orelse return error.WorktreeNotFound;
+        if (!no_fetch) {
+            fetch(ctx, project.dir);
+            reportDivergence(ctx, wt.dir);
+        }
+        ctx.print("{s}\n", .{wt.dir});
+        return;
+    }
 
     if (a.pos(1)) |wt_key| {
         const wt = project.worktrees.get(wt_key) orelse return error.WorktreeNotFound;
@@ -141,6 +159,43 @@ pub fn cdPath(ctx: *app.Context, rest: []const []const u8) !void {
         if (!a.flag(&.{"no-pull"})) pull(ctx, project.dir);
     }
     ctx.print("{s}\n", .{project.dir});
+}
+
+/// Interactively choose a registered project key, sorted alphabetically.
+fn pickProjectKey(ctx: *app.Context, state: *model.State) !?[]const u8 {
+    var keys = std.ArrayList([]const u8).init(ctx.gpa);
+    defer keys.deinit();
+    var it = state.projects.keyIterator();
+    while (it.next()) |k| try keys.append(k.*);
+    std.mem.sort([]const u8, keys.items, {}, lessThanStr);
+
+    const idx = try picker.pick(ctx, keys.items, "project") orelse return null;
+    return keys.items[idx];
+}
+
+/// Interactively choose a worktree key within `project`, freshest first.
+fn pickWorktreeKey(ctx: *app.Context, project: *const model.Project) !?[]const u8 {
+    const Entry = struct { key: []const u8, created_at: i64 };
+    var entries = std.ArrayList(Entry).init(ctx.gpa);
+    defer entries.deinit();
+    var it = project.worktrees.valueIterator();
+    while (it.next()) |wt| try entries.append(.{ .key = wt.key, .created_at = wt.created_at });
+    std.mem.sort(Entry, entries.items, {}, struct {
+        fn lessThan(_: void, a_: Entry, b_: Entry) bool {
+            return a_.created_at > b_.created_at;
+        }
+    }.lessThan);
+
+    var keys = std.ArrayList([]const u8).init(ctx.gpa);
+    defer keys.deinit();
+    for (entries.items) |e| try keys.append(e.key);
+
+    const idx = try picker.pick(ctx, keys.items, "worktree") orelse return null;
+    return keys.items[idx];
+}
+
+fn lessThanStr(_: void, a_: []const u8, b_: []const u8) bool {
+    return std.mem.lessThan(u8, a_, b_);
 }
 
 fn fetch(ctx: *app.Context, project_dir: []const u8) void {
