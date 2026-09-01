@@ -41,11 +41,11 @@ pub const usage =
     \\  cb cd [<key> [<worktree-key>]] [-i] [--no-fetch] [--no-pull]
     \\  cb ls [<key>]
     \\  cb rmproject <key> [--delete-dir]
-    \\  cb rm [<key> <worktree-key>] [--force]
+    \\  cb rm [<key> <worktree-key>] [-i] [--force]
     \\  cb review <key> <remote-branch> [-t <ticket>] [-n <note>] [--base <branch>] [--no-merge-base] [--shell]
     \\  cb review-local <key> <dir>
     \\  cb refresh [<key> <worktree-key>]
-    \\  cb review-shell <key> <worktree-key>
+    \\  cb review-shell [<key> <worktree-key>] [-i]
     \\  cb whereami
     \\  cb init <zsh|bash>
     \\  cb config [path]

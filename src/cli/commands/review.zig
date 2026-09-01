@@ -142,19 +142,33 @@ pub fn refresh(ctx: *app.Context, rest: []const []const u8) !void {
 }
 
 pub fn reviewShell(ctx: *app.Context, rest: []const []const u8) !void {
-    var a = try args.parse(ctx.gpa, rest, &.{});
+    var a = try args.parse(ctx.gpa, rest, &.{"i"});
     defer a.deinit();
-    const proj_key = a.pos(0) orelse return error.MissingArgument;
-    const wt_key = a.pos(1) orelse return error.MissingArgument;
 
     var state = try common.loadState(ctx);
     defer state.deinit();
+
+    var proj_key: []const u8 = undefined;
+    var wt_key: []const u8 = undefined;
+    if (a.flag(&.{"i"})) {
+        proj_key = if (a.pos(0)) |p| p else (try common.pickProjectKey(ctx, &state)) orelse return error.Aborted;
+        const pick_project = try common.requireProject(&state, proj_key);
+        wt_key = (try common.pickWorktreeKey(ctx, pick_project, isReviewKind)) orelse return error.Aborted;
+    } else {
+        proj_key = a.pos(0) orelse return error.MissingArgument;
+        wt_key = a.pos(1) orelse return error.MissingArgument;
+    }
+
     const project = try common.requireProject(&state, proj_key);
     const wt = project.worktrees.get(wt_key) orelse return error.WorktreeNotFound;
 
     const git_dir = try engine.reviewDir(ctx, proj_key, wt_key);
     defer ctx.gpa.free(git_dir);
     try spawnReviewShell(ctx, proj_key, wt_key, wt.dir, git_dir);
+}
+
+fn isReviewKind(kind: model.Kind) bool {
+    return kind == .review or kind == .review_local;
 }
 
 pub fn reviewDone(ctx: *app.Context, rest: []const []const u8) !void {

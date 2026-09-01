@@ -24,7 +24,7 @@ _cb() {
         local projects
         projects="$(command cb-bin __complete projects 2>/dev/null)"
         case "$cmd" in
-          cd) projects="-i $projects" ;;
+          cd|rm|review-shell) projects="-i $projects" ;;
         esac
         COMPREPLY=( $(compgen -W "$projects" -- "$cur") )
       elif [ "$COMP_CWORD" -eq 3 ]; then
@@ -33,7 +33,7 @@ _cb() {
             local worktrees
             worktrees="$(command cb-bin __complete worktrees "${COMP_WORDS[2]}" 2>/dev/null)"
             case "$cmd" in
-              cd) worktrees="-i $worktrees" ;;
+              cd|rm|review-shell) worktrees="-i $worktrees" ;;
             esac
             COMPREPLY=( $(compgen -W "$worktrees" -- "$cur") )
             ;;

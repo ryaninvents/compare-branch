@@ -42,37 +42,18 @@ cb() {
       fi
       ;;
     rm)
-      local __cb_rm_proj='' __cb_rm_wt='' __cb_rm_pos=0
-      local __cb_arg
-      for __cb_arg in "${@:2}"; do
-        case "$__cb_arg" in
-          -*) ;;
-          *)
-            __cb_rm_pos=$((__cb_rm_pos + 1))
-            [ $__cb_rm_pos -eq 1 ] && __cb_rm_proj="$__cb_arg"
-            [ $__cb_rm_pos -eq 2 ] && __cb_rm_wt="$__cb_arg"
-            ;;
-        esac
-      done
-      local __cb_rm_dir=''
-      if [ -n "$__cb_rm_proj" ] && [ -n "$__cb_rm_wt" ]; then
-        __cb_rm_dir="$(command cb-bin cd-path --no-fetch "$__cb_rm_proj" "$__cb_rm_wt" 2>/dev/null)"
-      elif [ -z "$__cb_rm_proj" ] && [ -z "$__cb_rm_wt" ]; then
-        # No explicit args: cb-bin infers the worktree from $PWD, so escape
-        # from $PWD itself rather than pre-resolving a dir.
-        __cb_rm_dir="$PWD"
-      fi
       command cb-bin rm "${@:2}" || return $?
-      if [ -n "$__cb_rm_dir" ]; then
-        case "$PWD" in
-          "$__cb_rm_dir"|"$__cb_rm_dir"/*)
-            local __cb_up="$PWD"
-            while [ -n "$__cb_up" ] && [ ! -d "$__cb_up" ]; do
-              __cb_up="${__cb_up%/*}"
-            done
-            [ -n "$__cb_up" ] && builtin cd "$__cb_up"
-            ;;
-        esac
+      # $PWD may no longer exist: cb-bin infers the target from $PWD when no
+      # args are given, and even with an explicit key (or -i's interactive
+      # pick, which the wrapper can't predict) that target might be where we
+      # are standing. Checking existence after the fact covers every case
+      # uniformly instead of trying to predict the target beforehand.
+      if [ ! -d "$PWD" ]; then
+        local __cb_up="$PWD"
+        while [ -n "$__cb_up" ] && [ ! -d "$__cb_up" ]; do
+          __cb_up="${__cb_up%/*}"
+        done
+        [ -n "$__cb_up" ] && builtin cd "$__cb_up"
       fi
       ;;
     'exit')

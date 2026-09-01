@@ -56,12 +56,12 @@ cb mkproject <key> [<dir>] [--remote <url>] [--category <cat>] [--worktrees <pat
 cb mk <key> <worktree-key> [-t <ticket>] [--base <branch>] [--branch-name <name>] [-n <note>]
 cb cd [<key> [<worktree-key>]] [-i]
 cb ls [<key>]
-cb rm [<key> <worktree-key>]
+cb rm [<key> <worktree-key>] [-i]
 
 # review flow
 cb review <key> <remote-branch> [-t <ticket>] [-n <note>] [--base <branch>] [--no-merge-base] [--shell]
 cb review-local <key> <dir>
-cb review-shell <key> <worktree-key>
+cb review-shell [<key> <worktree-key>] [-i]
 cb refresh [<key> <worktree-key>]   # no args inside a review shell, or inferred from $PWD
 
 cb whereami
@@ -87,6 +87,23 @@ cb config [path]
   directory — inferred by matching `$PWD` against every registered project and
   worktree dir. Outside any registered tree it errors; if two registered dirs
   somehow tie, it refuses to guess and errors instead.
+
+## Interactive & context-aware
+
+Most commands that take a `<key> <worktree-key>` pair work without them too:
+
+- **Inferred from `$PWD`** — `cb rm`, `cb refresh`, and `cb cd` (project form)
+  accept omitted positionals and resolve the project/worktree containing the
+  current directory, the same lookup `cb whereami` reports. This never guesses:
+  outside any registered tree, or if `$PWD` somehow matches more than one, the
+  command errors instead of picking one.
+- **`-i` for interactive selection** — `cb cd -i`, `cb rm -i`, and `cb
+  review-shell -i` open a picker instead (`review-shell -i` only offers review
+  worktrees). Give a project key to pick just the worktree (`cb cd demo -i`), or
+  omit it to pick the project first. Worktrees are listed freshest-first. Uses
+  `fzf` when it's on `PATH` (`brew install fzf`), otherwise a numbered
+  stdin/stderr prompt — `cb` has no hard dependency on it. Refuses outright, no
+  fallback guess, when stdin/stderr isn't a terminal.
 
 ## Reviews
 

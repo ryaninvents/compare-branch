@@ -5,6 +5,7 @@ const model = @import("../../state/model.zig");
 const sanitize = @import("../../util/sanitize.zig");
 const locate = @import("../../state/locate.zig");
 const args = @import("../args.zig");
+const picker = @import("../picker.zig");
 
 // Helpers shared across command handlers: state access, worktree path
 // computation, and an interactive confirmation prompt.
@@ -57,6 +58,54 @@ fn locateCwd(ctx: *app.Context, state: *model.State) !locate.Location {
     const cwd = try locate.canonicalize(ctx.gpa, raw_cwd);
     defer ctx.gpa.free(cwd);
     return locate.locate(state, cwd);
+}
+
+/// Interactively choose a registered project key, sorted alphabetically.
+pub fn pickProjectKey(ctx: *app.Context, state: *model.State) !?[]const u8 {
+    var keys = std.ArrayList([]const u8).init(ctx.gpa);
+    defer keys.deinit();
+    var it = state.projects.keyIterator();
+    while (it.next()) |k| try keys.append(k.*);
+    std.mem.sort([]const u8, keys.items, {}, lessThanStr);
+
+    const idx = try picker.pick(ctx, keys.items, "project") orelse return null;
+    return keys.items[idx];
+}
+
+/// Interactively choose a worktree key within `project`, freshest first.
+/// `filter`, when given, restricts candidates to worktrees whose kind it
+/// accepts (e.g. review-only pickers for `cb review-shell -i`).
+pub fn pickWorktreeKey(
+    ctx: *app.Context,
+    project: *const model.Project,
+    filter: ?*const fn (model.Kind) bool,
+) !?[]const u8 {
+    const Entry = struct { key: []const u8, created_at: i64 };
+    var entries = std.ArrayList(Entry).init(ctx.gpa);
+    defer entries.deinit();
+    var it = project.worktrees.valueIterator();
+    while (it.next()) |wt| {
+        if (filter) |f| {
+            if (!f(wt.kind)) continue;
+        }
+        try entries.append(.{ .key = wt.key, .created_at = wt.created_at });
+    }
+    std.mem.sort(Entry, entries.items, {}, struct {
+        fn lessThan(_: void, a_: Entry, b_: Entry) bool {
+            return a_.created_at > b_.created_at;
+        }
+    }.lessThan);
+
+    var keys = std.ArrayList([]const u8).init(ctx.gpa);
+    defer keys.deinit();
+    for (entries.items) |e| try keys.append(e.key);
+
+    const idx = try picker.pick(ctx, keys.items, "worktree") orelse return null;
+    return keys.items[idx];
+}
+
+fn lessThanStr(_: void, a_: []const u8, b_: []const u8) bool {
+    return std.mem.lessThan(u8, a_, b_);
 }
 
 /// Directory that holds a project's worktrees. An explicit --worktrees path
