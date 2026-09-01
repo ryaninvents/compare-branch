@@ -48,6 +48,8 @@ where
 is
 .Fl Fl base
 if given, else the project's default branch.
+The commit it started at is recorded as
+.Ic refs/cb/base .
 .Fl Fl no-merge-base
 starts it at
 .Ar base
@@ -75,13 +77,48 @@ a file to mark it reviewed,
 to checkpoint a batch and advance
 .Ev HEAD .
 .Ic cb refresh
-fetches new upstream commits and updates
-.Em only
-the working tree
+fetches new upstream commits and updates the working tree
 .Pq via Ic git restore --source ,
 so amended code you already reviewed and committed resurfaces as
 changed again, without discarding your committed review progress or
 requiring a rebase.
+.Pp
+It also re-derives
+.Ar base
+the same way it was first computed and, if it moved, 3-way-merges the
+delta into
+.Ev HEAD :
+.Bl -bullet
+.It
+Cleanly-merged paths advance
+.Ev HEAD
+to match
+.Ar base Ns 's
+new content, so a base-branch change you never touched \(em including one
+the author merged or rebased into
+.Ar branch
+\(em reads as already-reviewed rather than muddying the diff with someone
+else's already-landed code.
+.It
+A path where
+.Ar base Ns 's
+change conflicts with your already-reviewed content keeps the reviewed
+version in
+.Ev HEAD .
+Since the working tree does carry
+.Ar base Ns 's
+change (once
+.Ar branch
+has absorbed it),
+.Ic git status
+flags that path as pending again instead of silently accepting either
+side.
+.El
+.Pp
+.Fl Fl no-advance-base
+skips all of this and only updates the working tree, exactly as
+.Nm cb
+did before 0.6.0.
 .Sh REVIEWING A PULL REQUEST
 .Ic cb review Ar key Ar N
 or
@@ -120,11 +157,28 @@ compares a live directory \(em not a git worktree, e.g. AI-generated
 output living anywhere on disk \(em against the project's base branch,
 using the same
 .Ev HEAD Ns -as-baseline mechanism.
+Since there is no target branch to fetch, the directory itself is never
+touched by
 .Ic cb refresh
-on a
-.Cm review-local
-review is a no-op
-.Pq it tracks the directory live ; there is nothing to fetch .
+\(em it tracks the directory live.
+What
+.Ic cb refresh
+.Em does
+do is re-fetch
+.Ar base
+and, if it moved, advance
+.Ev HEAD
+the same way a remote review's does
+.Pq Sx THE ISOLATED REVIEW REPO ,
+so a long-running local review doesn't drift as
+.Ar base
+lands commits.
+A file
+.Ar base
+newly added will show as deleted in
+.Ic git status
+if the live directory doesn't have it \(em an honest reflection of what's
+actually there, not a bug.
 Unlike a remote review,
 .Ic cb done
 .Pq Cm review-done

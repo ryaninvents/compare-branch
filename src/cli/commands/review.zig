@@ -90,6 +90,7 @@ pub fn review(ctx: *app.Context, rest: []const []const u8) !void {
         .ticket = a.value(&.{ "t", "ticket" }),
         .note = a.value(&.{ "n", "note" }),
         .base = a.value(&.{"base"}),
+        .noMergeBase = a.flag(&.{"no-merge-base"}),
         .reviewBranch = branch,
         .prTitle = if (pr_info) |p| p.title else null,
         .prAuthor = if (pr_info) |p| p.author else null,
@@ -155,7 +156,7 @@ pub fn reviewLocal(ctx: *app.Context, rest: []const []const u8) !void {
 }
 
 pub fn refresh(ctx: *app.Context, rest: []const []const u8) !void {
-    var a = try args.parse(ctx.gpa, rest, &.{});
+    var a = try args.parse(ctx.gpa, rest, &.{"no-advance-base"});
     defer a.deinit();
 
     var state = try common.loadState(ctx);
@@ -170,11 +171,31 @@ pub fn refresh(ctx: *app.Context, rest: []const []const u8) !void {
     const git_dir = try engine.reviewDir(ctx, ref.project, ref.key);
     defer ctx.gpa.free(git_dir);
 
-    switch (wt.kind) {
-        .review => try engine.refreshRemote(ctx, git_dir, wt.dir, project.dir, wt.review_branch orelse wt.branch),
-        .review_local => ctx.print("local review tracks the working tree live; nothing to fetch\n", .{}),
+    const advance_base = !a.flag(&.{"no-advance-base"});
+    const default_branch = try ctx.git.defaultBranch(project.dir);
+    defer ctx.gpa.free(default_branch);
+
+    var result: engine.AdvanceResult = switch (wt.kind) {
+        .review => try engine.refreshRemote(ctx, .{
+            .project_dir = project.dir,
+            .git_dir = git_dir,
+            .work_tree = wt.dir,
+            .branch = wt.review_branch orelse wt.branch,
+            .default_branch = default_branch,
+            .base_arg = wt.base,
+            .no_merge_base = wt.no_merge_base,
+            .advance_base = advance_base,
+        }),
+        .review_local => try engine.refreshLocal(ctx, .{
+            .project_dir = project.dir,
+            .git_dir = git_dir,
+            .default_branch = default_branch,
+            .base_arg = wt.base,
+            .advance_base = advance_base,
+        }),
         .work => return error.WorktreeNotFound,
-    }
+    };
+    defer result.deinit(ctx.gpa);
 
     try store.appendEvent(ctx.gpa, ctx.state_path, store.ReviewRefreshed{
         .at = ctx.now_unix,
@@ -182,6 +203,27 @@ pub fn refresh(ctx: *app.Context, rest: []const []const u8) !void {
         .key = ref.key,
     });
     ctx.print("refreshed '{s}'\n", .{ref.key});
+    printAdvanceSummary(ctx, result);
+}
+
+fn printAdvanceSummary(ctx: *app.Context, result: engine.AdvanceResult) void {
+    if (!result.advanced) return;
+    const old_len = @min(@as(usize, 7), result.old_base.len);
+    const new_len = @min(@as(usize, 7), result.new_base.len);
+    ctx.print("  base advanced {s} -> {s} ({d} file{s} absorbed from main)\n", .{
+        result.old_base[0..old_len],
+        result.new_base[0..new_len],
+        result.absorbed,
+        if (result.absorbed == 1) "" else "s",
+    });
+    if (result.conflicts.items.len > 0) {
+        ctx.print("  {d} path{s} need re-review:", .{
+            result.conflicts.items.len,
+            if (result.conflicts.items.len == 1) "" else "s",
+        });
+        for (result.conflicts.items) |p| ctx.print(" {s}", .{p});
+        ctx.print("\n", .{});
+    }
 }
 
 pub fn reviewShell(ctx: *app.Context, rest: []const []const u8) !void {

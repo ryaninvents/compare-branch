@@ -53,6 +53,7 @@ pub const WorktreeCreated = struct {
     ticket: ?[]const u8 = null,
     note: ?[]const u8 = null,
     base: ?[]const u8 = null,
+    noMergeBase: ?bool = null,
     reviewBranch: ?[]const u8 = null,
     targetDir: ?[]const u8 = null,
     prTitle: ?[]const u8 = null,
@@ -139,6 +140,7 @@ fn applyEvent(state: *model.State, value: std.json.Value) !void {
             .ticket = try dupOpt(a, strField(obj, "ticket")),
             .note = try dupOpt(a, strField(obj, "note")),
             .base = try dupOpt(a, strField(obj, "base")),
+            .no_merge_base = boolField(obj, "noMergeBase") orelse false,
             .review_branch = try dupOpt(a, strField(obj, "reviewBranch")),
             .target_dir = try dupOpt(a, strField(obj, "targetDir")),
             .pr_title = try dupOpt(a, strField(obj, "prTitle")),
@@ -176,6 +178,14 @@ fn intField(obj: std.json.ObjectMap, key: []const u8) ?i64 {
     const v = obj.get(key) orelse return null;
     return switch (v) {
         .integer => |n| n,
+        else => null,
+    };
+}
+
+fn boolField(obj: std.json.ObjectMap, key: []const u8) ?bool {
+    const v = obj.get(key) orelse return null;
+    return switch (v) {
+        .bool => |b| b,
         else => null,
     };
 }

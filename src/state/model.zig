@@ -35,6 +35,9 @@ pub const Worktree = struct {
     ticket: ?[]const u8 = null,
     note: ?[]const u8 = null,
     base: ?[]const u8 = null,
+    /// Set when the review was created with `--no-merge-base`: the baseline
+    /// tracks `base`'s tip directly rather than its merge-base with the target.
+    no_merge_base: bool = false,
     /// For review worktrees: the remote branch under review.
     review_branch: ?[]const u8 = null,
     /// For review_local worktrees: the working directory being snapshotted.

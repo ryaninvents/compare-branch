@@ -57,6 +57,7 @@
 .Nm
 .Cm refresh
 .Op Ar key worktree-key
+.Op Fl Fl no-advance-base
 .Nm
 .Cm review-shell
 .Op Ar key Op Ar worktree-key
@@ -281,9 +282,17 @@ but against a live directory
 compared to the project's base branch, instead of a remote branch.
 See
 .Xr cb-review 7 .
-.Ss refresh Op Ar key worktree-key
+.Ss refresh Op Ar key worktree-key Op Fl Fl no-advance-base
 Pull new upstream changes into a review's working tree without
 disturbing already-reviewed progress.
+Also re-derives the review's base the same way it was first computed and,
+if it moved, folds the base branch's own changes into the reviewed
+baseline, so a merge-from-base or a moved base branch reads as
+already-reviewed instead of muddying the diff with someone else's
+already-landed code.
+.Fl Fl no-advance-base
+skips this and keeps the pre-0.6 behavior: only the working tree is
+updated, the baseline never moves.
 With no arguments: inside a review shell, targets that shell's review;
 otherwise infers the target from
 .Ev PWD

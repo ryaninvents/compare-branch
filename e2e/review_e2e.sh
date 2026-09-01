@@ -68,6 +68,45 @@ assert_eq "$(cat "$WT/a.txt")" "hello world!!" "refresh updated worktree to new 
 # The amended file resurfaces as unreviewed because the reviewed baseline held.
 assert_contains "$(rgit "$GD" "$WT" status --porcelain)" "a.txt" "amended file re-exposed"
 
+echo "[5b] base moved but the PR didn't: refresh is silent (merge-base unchanged)"
+( cd "$ORIGIN" && git checkout -q main && printf 'unrelated\n' > z.txt && git add z.txt && git commit -qm 'main moves' && git checkout -q feature )
+out="$("$BIN" refresh myproj feature)"
+assert_eq "$out" "refreshed 'feature'" "no base-advance summary when merge-base is unchanged"
+status="$(rgit "$GD" "$WT" status --porcelain)"
+[ -z "$(echo "$status" | grep 'z.txt' || true)" ] || fail "z.txt from main must not appear: main never merged into feature"
+( cd "$ORIGIN" && git checkout -q main && git rm -q z.txt && git commit -qm 'undo main moves' && git checkout -q feature )
+
+echo "[5c] author merges main in: main's new file is absorbed as already-reviewed"
+( cd "$ORIGIN" && git checkout -q main && printf 'from main\n' > d.txt && git add d.txt && git commit -qm 'main adds d.txt' )
+( cd "$ORIGIN" && git checkout -q feature && git merge -q --no-edit main && git checkout -q main )
+out="$("$BIN" refresh myproj feature)"
+assert_contains "$out" "base advanced" "refresh reports the base advanced"
+assert_contains "$out" "(1 file absorbed from main)" "d.txt is the only absorbed file"
+status="$(rgit "$GD" "$WT" status --porcelain)"
+[ -z "$(echo "$status" | grep 'd.txt' || true)" ] || fail "d.txt absorbed into the baseline must not show as pending"
+assert_contains "$status" "c.txt" "c.txt (the author's own unreviewed file) still pending"
+
+echo "[5d] a real conflict between main and the reviewed baseline keeps the reviewed version, re-exposing the file"
+( cd "$ORIGIN" && git checkout -q main && printf 'hello MAIN CHANGE\n' > a.txt && git commit -qam 'main changes a.txt' )
+( cd "$ORIGIN" && git checkout -q feature
+  git merge --no-edit main >/dev/null 2>&1 || true
+  printf 'hello MERGED\n' > a.txt && git add a.txt && git commit -qm 'merge main, resolve conflict'
+  git checkout -q main )
+out="$("$BIN" refresh myproj feature)"
+assert_contains "$out" "base advanced" "refresh reports the base advanced"
+assert_contains "$out" "need re-review" "conflicted path is called out"
+assert_contains "$out" "a.txt" "a.txt is the conflicted path"
+status="$(rgit "$GD" "$WT" status --porcelain)"
+assert_contains "$status" "a.txt" "a.txt resurfaces: main's change conflicted with the already-reviewed content"
+
+echo "[5e] --no-advance-base keeps the frozen-baseline behavior"
+( cd "$ORIGIN" && git checkout -q main && printf 'from main2\n' > e.txt && git add e.txt && git commit -qm 'main adds e.txt' )
+( cd "$ORIGIN" && git checkout -q feature && git merge -q --no-edit main && git checkout -q main )
+out="$("$BIN" refresh myproj feature --no-advance-base)"
+assert_eq "$out" "refreshed 'feature'" "no base-advance summary with --no-advance-base"
+status="$(rgit "$GD" "$WT" status --porcelain)"
+assert_contains "$status" "e.txt" "e.txt not absorbed: base advance was skipped"
+
 echo "[6] review-done removes the worktree but not the project"
 "$BIN" review-done myproj feature --force >/dev/null
 [ ! -d "$WT" ] || fail "worktree dir should be gone"
@@ -83,6 +122,17 @@ LGD="$TMP/reviews/myproj--ai-output.git"
 lstatus="$(rgit "$LGD" "$D" status --porcelain)"
 assert_contains "$lstatus" "M a.txt" "local edit detected vs base"
 [ -z "$(echo "$lstatus" | grep 'b.txt' || true)" ] || fail "unchanged b.txt must not show"
+
+echo "[7b] refresh advances a review-local baseline too, without touching the live dir"
+( cd "$ORIGIN" && git checkout -q main && printf 'from main3\n' > f.txt && git add f.txt && git commit -qm 'main adds f.txt' && git checkout -q feature )
+out="$("$BIN" refresh myproj ai-output)"
+assert_contains "$out" "base advanced" "review-local refresh reports the base advanced"
+assert_eq "$(cat "$D/a.txt")" "hello LOCAL" "live dir content untouched by refresh"
+assert_eq "$(cat "$D/b.txt")" "keep" "live dir content untouched by refresh"
+[ ! -e "$D/f.txt" ] || fail "refresh must never write into the live review-local directory"
+lstatus="$(rgit "$LGD" "$D" status --porcelain)"
+assert_contains "$lstatus" "f.txt" "baseline picked up main's new file, which the live dir doesn't have"
+assert_contains "$lstatus" "a.txt" "a.txt still shows: live dir's edit vs baseline"
 
 echo "[8] review-done on a local review leaves the user's dir intact"
 "$BIN" review-done myproj ai-output --force >/dev/null
