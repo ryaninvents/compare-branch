@@ -55,7 +55,7 @@ forwards straight to `cb-bin`.
 cb mkproject <key> [<dir>] [--remote <url>] [--category <cat>] [--worktrees <path>]
 cb mk <key> <worktree-key> [-t <ticket>] [--base <branch>] [--branch-name <name>] [-n <note>]
 cb cd [<key> [<worktree-key>]] [-i]
-cb ls [<key>]
+cb ls [<key>] [--json] [--no-status]
 cb rm [<key> <worktree-key>] [-i]
 
 # review flow
@@ -91,6 +91,12 @@ cb config [path]
   directory — inferred by matching `$PWD` against every registered project and
   worktree dir. Outside any registered tree it errors; if two registered dirs
   somehow tie, it refuses to guess and errors instead.
+- **`ls <key>`** shows branch, age, and a status column (`*` dirty, `+N`/`-N`
+  ahead/behind upstream) per worktree; the status column costs a couple of
+  `git` calls per worktree, so pass `--no-status` to skip it on a large
+  listing. Bare `cb ls` shows each project's worktree count. `--json` emits
+  the full records (including `dir`, `kind`, `base`, and timestamps) for
+  scripting.
 
 ## Interactive & context-aware
 

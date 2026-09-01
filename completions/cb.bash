@@ -25,6 +25,7 @@ _cb() {
         projects="$(command cb-bin __complete projects 2>/dev/null)"
         case "$cmd" in
           cd|rm|review-shell) projects="-i $projects" ;;
+          ls) projects="--json --no-status $projects" ;;
         esac
         COMPREPLY=( $(compgen -W "$projects" -- "$cur") )
       elif [ "$COMP_CWORD" -eq 3 ]; then

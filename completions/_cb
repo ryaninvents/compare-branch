@@ -55,6 +55,7 @@ _cb() {
           if (( CURRENT == 2 )); then
             case "$line[1]" in
               cd|rm|review-shell) _values 'option' '-i[interactive fzf picker]' ;;
+              ls) _values 'option' '--json[emit JSON]' '--no-status[skip the status column]' ;;
             esac
             _cb_projects
           elif (( CURRENT == 3 )); then

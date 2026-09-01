@@ -197,34 +197,16 @@ fn pull(ctx: *app.Context, project_dir: []const u8) void {
 }
 
 fn reportDivergence(ctx: *app.Context, wt_dir: []const u8) void {
-    // Bail early if there is no upstream tracking branch for this worktree.
-    var upstream_check = ctx.git.run(wt_dir, &.{ "rev-parse", "--verify", "@{u}" }) catch return;
-    defer upstream_check.deinit();
-    if (!upstream_check.ok()) return;
+    const info = (ctx.git.aheadBehind(ctx.gpa, wt_dir) catch return) orelse return;
+    defer ctx.gpa.free(info.upstream);
+    if (info.ahead == 0 and info.behind == 0) return;
 
-    // ahead\tbehind relative to upstream.
-    var counts_out = ctx.git.run(wt_dir, &.{ "rev-list", "--left-right", "--count", "HEAD...@{u}" }) catch return;
-    defer counts_out.deinit();
-    if (!counts_out.ok()) return;
-
-    const counts = std.mem.trim(u8, counts_out.stdout, "\n\r");
-    var it = std.mem.splitScalar(u8, counts, '\t');
-    const ahead_str = it.next() orelse return;
-    const behind_str = it.next() orelse return;
-    const ahead = std.fmt.parseInt(usize, ahead_str, 10) catch return;
-    const behind = std.fmt.parseInt(usize, behind_str, 10) catch return;
-    if (ahead == 0 and behind == 0) return;
-
-    var upstream_name_out = ctx.git.run(wt_dir, &.{ "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}" }) catch return;
-    defer upstream_name_out.deinit();
-    const upstream = if (upstream_name_out.ok()) upstream_name_out.line() else "upstream";
-
-    if (ahead > 0 and behind > 0) {
-        ctx.warn("note: {d} ahead, {d} behind {s} (diverged)\n", .{ ahead, behind, upstream });
-    } else if (behind > 0) {
-        ctx.warn("note: {d} behind {s}\n", .{ behind, upstream });
+    if (info.ahead > 0 and info.behind > 0) {
+        ctx.warn("note: {d} ahead, {d} behind {s} (diverged)\n", .{ info.ahead, info.behind, info.upstream });
+    } else if (info.behind > 0) {
+        ctx.warn("note: {d} behind {s}\n", .{ info.behind, info.upstream });
     } else {
-        ctx.warn("note: {d} ahead of {s}\n", .{ ahead, upstream });
+        ctx.warn("note: {d} ahead of {s}\n", .{ info.ahead, info.upstream });
     }
 }
 

@@ -3,6 +3,7 @@ const app = @import("../app.zig");
 const args = @import("../args.zig");
 const store = @import("../../state/store.zig");
 const common = @import("common.zig");
+const model = @import("../../state/model.zig");
 
 // `cb mkproject` registers a project: it either adopts an existing checkout at
 // <dir> or, given --remote, clones into <dir> (defaulting to baseDir/<key>).
@@ -117,33 +118,136 @@ pub fn rmproject(ctx: *app.Context, rest: []const []const u8) !void {
 }
 
 pub fn ls(ctx: *app.Context, rest: []const []const u8) !void {
-    var a = try args.parse(ctx.gpa, rest, &.{});
+    var a = try args.parse(ctx.gpa, rest, &.{ "json", "no-status" });
     defer a.deinit();
 
     var state = try common.loadState(ctx);
     defer state.deinit();
 
+    const json = a.flag(&.{"json"});
+
     if (a.pos(0)) |key| {
         const project = try common.requireProject(&state, key);
-        if (project.worktrees.count() == 0) {
-            ctx.print("(no worktrees for '{s}')\n", .{key});
-            return;
-        }
-        var it = project.worktrees.valueIterator();
-        while (it.next()) |wt| {
-            ctx.print("{s:<20} {s:<14} {s}\n", .{ wt.key, wt.kind.toString(), wt.dir });
-            if (wt.ticket) |t| ctx.print("  ticket: {s}\n", .{t});
-            if (wt.note) |n| ctx.print("  note:   {s}\n", .{n});
-        }
-        return;
+        if (json) return lsWorktreesJson(ctx, key, project);
+        return lsWorktrees(ctx, key, project, !a.flag(&.{"no-status"}));
     }
 
+    if (json) return lsProjectsJson(ctx, &state);
+    return lsProjects(ctx, &state);
+}
+
+fn lsWorktrees(ctx: *app.Context, key: []const u8, project: *const model.Project, with_status: bool) !void {
+    if (project.worktrees.count() == 0) {
+        ctx.print("(no worktrees for '{s}')\n", .{key});
+        return;
+    }
+    var it = project.worktrees.valueIterator();
+    while (it.next()) |wt| {
+        const age = try formatAge(ctx.gpa, ctx.now_unix, wt.created_at);
+        defer ctx.gpa.free(age);
+
+        var status: []u8 = "";
+        defer if (status.len > 0) ctx.gpa.free(status);
+        if (with_status) status = try formatStatus(ctx, wt.dir);
+
+        ctx.print("{s:<16} {s:<12} {s:<28} {s:<10} {s}\n", .{ wt.key, wt.kind.toString(), wt.branch, age, status });
+        if (wt.ticket) |t| ctx.print("  ticket: {s}\n", .{t});
+        if (wt.note) |n| ctx.print("  note:   {s}\n", .{n});
+        ctx.print("  path:   {s}\n", .{wt.dir});
+    }
+}
+
+fn lsProjects(ctx: *app.Context, state: *model.State) !void {
     if (state.projects.count() == 0) {
         ctx.print("(no projects — create one with `cb mkproject`)\n", .{});
         return;
     }
     var it = state.projects.valueIterator();
     while (it.next()) |p| {
-        ctx.print("{s:<16} {s}\n", .{ p.key, p.dir });
+        ctx.print("{s:<16} {d:<4} {s}\n", .{ p.key, p.worktrees.count(), p.dir });
     }
+}
+
+/// Dirty marker (`*`) plus ahead/behind counts (`+N`/`-N`) relative to
+/// upstream. Costs one or two `git` calls per worktree, so callers gate this
+/// behind `--no-status` for large listings.
+fn formatStatus(ctx: *app.Context, wt_dir: []const u8) ![]u8 {
+    var parts = std.ArrayList(u8).init(ctx.gpa);
+    errdefer parts.deinit();
+
+    if (ctx.git.isDirty(wt_dir)) try parts.append('*');
+
+    if (try ctx.git.aheadBehind(ctx.gpa, wt_dir)) |info| {
+        defer ctx.gpa.free(info.upstream);
+        if (info.ahead > 0 or info.behind > 0) {
+            if (parts.items.len > 0) try parts.append(' ');
+            if (info.ahead > 0) try parts.writer().print("+{d}", .{info.ahead});
+            if (info.behind > 0) {
+                if (info.ahead > 0) try parts.append(' ');
+                try parts.writer().print("-{d}", .{info.behind});
+            }
+        }
+    }
+    return parts.toOwnedSlice();
+}
+
+fn formatAge(gpa: std.mem.Allocator, now: i64, created_at: i64) ![]u8 {
+    const delta: i64 = @max(now - created_at, 0);
+    if (delta < 60) return gpa.dupe(u8, "just now");
+    if (delta < 3600) return std.fmt.allocPrint(gpa, "{d}m ago", .{@divTrunc(delta, 60)});
+    if (delta < 86400) return std.fmt.allocPrint(gpa, "{d}h ago", .{@divTrunc(delta, 3600)});
+    return std.fmt.allocPrint(gpa, "{d}d ago", .{@divTrunc(delta, 86400)});
+}
+
+const stringify_opts = std.json.StringifyOptions{ .emit_null_optional_fields = false, .whitespace = .indent_2 };
+
+fn lsProjectsJson(ctx: *app.Context, state: *model.State) !void {
+    var out = std.ArrayList(u8).init(ctx.gpa);
+    defer out.deinit();
+    try out.append('[');
+    var it = state.projects.valueIterator();
+    var first = true;
+    while (it.next()) |p| {
+        if (!first) try out.append(',');
+        first = false;
+        try std.json.stringify(.{
+            .key = p.key,
+            .dir = p.dir,
+            .createdAt = p.created_at,
+            .category = p.category,
+            .worktreesPath = p.worktrees_path,
+            .remote = p.remote,
+            .worktreeCount = p.worktrees.count(),
+        }, stringify_opts, out.writer());
+    }
+    try out.append(']');
+    ctx.print("{s}\n", .{out.items});
+}
+
+fn lsWorktreesJson(ctx: *app.Context, key: []const u8, project: *const model.Project) !void {
+    _ = key;
+    var out = std.ArrayList(u8).init(ctx.gpa);
+    defer out.deinit();
+    try out.append('[');
+    var it = project.worktrees.valueIterator();
+    var first = true;
+    while (it.next()) |wt| {
+        if (!first) try out.append(',');
+        first = false;
+        try std.json.stringify(.{
+            .key = wt.key,
+            .branch = wt.branch,
+            .dir = wt.dir,
+            .kind = wt.kind.toString(),
+            .createdAt = wt.created_at,
+            .ticket = wt.ticket,
+            .note = wt.note,
+            .base = wt.base,
+            .reviewBranch = wt.review_branch,
+            .targetDir = wt.target_dir,
+            .lastRefreshed = wt.last_refreshed,
+        }, stringify_opts, out.writer());
+    }
+    try out.append(']');
+    ctx.print("{s}\n", .{out.items});
 }

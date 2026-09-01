@@ -109,4 +109,45 @@ pub const Git = struct {
     pub fn mergeBase(self: Git, dir: []const u8, a: []const u8, b: []const u8) GitError![]u8 {
         return self.capture(dir, &.{ "merge-base", a, b });
     }
+
+    pub const AheadBehind = struct {
+        ahead: usize,
+        behind: usize,
+        /// Owned; caller frees with the allocator passed to aheadBehind().
+        upstream: []u8,
+    };
+
+    /// Ahead/behind counts for `dir`'s HEAD relative to its upstream tracking
+    /// branch. Returns null when there is no upstream (never an error — a
+    /// worktree with no upstream just has nothing to report).
+    pub fn aheadBehind(self: Git, allocator: std.mem.Allocator, dir: []const u8) GitError!?AheadBehind {
+        var upstream_check = try self.run(dir, &.{ "rev-parse", "--verify", "@{u}" });
+        defer upstream_check.deinit();
+        if (!upstream_check.ok()) return null;
+
+        var counts_out = try self.run(dir, &.{ "rev-list", "--left-right", "--count", "HEAD...@{u}" });
+        defer counts_out.deinit();
+        if (!counts_out.ok()) return null;
+
+        const counts = std.mem.trim(u8, counts_out.stdout, "\n\r");
+        var it = std.mem.splitScalar(u8, counts, '\t');
+        const ahead_str = it.next() orelse return null;
+        const behind_str = it.next() orelse return null;
+        const ahead = std.fmt.parseInt(usize, ahead_str, 10) catch return null;
+        const behind = std.fmt.parseInt(usize, behind_str, 10) catch return null;
+
+        const upstream = self.capture(dir, &.{ "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}" }) catch
+            try allocator.dupe(u8, "upstream");
+
+        return .{ .ahead = ahead, .behind = behind, .upstream = upstream };
+    }
+
+    /// True when `dir` has uncommitted or untracked changes. False (not an
+    /// error) when the status can't be determined.
+    pub fn isDirty(self: Git, dir: []const u8) bool {
+        var out = self.run(dir, &.{ "status", "--porcelain" }) catch return false;
+        defer out.deinit();
+        if (!out.ok()) return false;
+        return std.mem.trim(u8, out.stdout, " \n\r\t").len > 0;
+    }
 };
