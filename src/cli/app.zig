@@ -1,6 +1,7 @@
 const std = @import("std");
 const Config = @import("../config/config.zig").Config;
 const git = @import("../git/git.zig");
+const build_options = @import("build_options");
 
 const projects = @import("commands/projects.zig");
 const worktree = @import("commands/worktree.zig");
@@ -37,6 +38,8 @@ pub const usage =
     \\cb — disposable git worktree manager
     \\
     \\Usage:
+    \\  cb --version | -v
+    \\  cb --help | -h
     \\  cb mkproject <key> [<dir>] [--remote <url>] [--category <cat>] [--worktrees <path>]
     \\  cb mk <key> <worktree-key> [-t <ticket>] [--base <branch>] [--branch-name <name>] [-n <note>] [--no-cd] [--no-fetch] [--no-hooks]
     \\  cb cd [<key> [<worktree-key>]] [-i] [--no-fetch] [--no-pull]
@@ -57,6 +60,10 @@ pub const usage =
 pub fn run(ctx: *Context, argv: []const []const u8) !u8 {
     if (argv.len < 1 or isHelp(argv[0])) {
         ctx.print("{s}", .{usage});
+        return 0;
+    }
+    if (isVersion(argv[0])) {
+        ctx.print("cb {s}\n", .{build_options.version});
         return 0;
     }
     const cmd = argv[0];
@@ -93,6 +100,10 @@ fn dispatch(ctx: *Context, cmd: []const u8, rest: []const []const u8) !void {
 
 fn isHelp(s: []const u8) bool {
     return eq(s, "-h") or eq(s, "--help") or eq(s, "help");
+}
+
+fn isVersion(s: []const u8) bool {
+    return eq(s, "-v") or eq(s, "--version");
 }
 
 fn eq(a: []const u8, b: []const u8) bool {

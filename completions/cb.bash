@@ -11,7 +11,7 @@ _cb() {
 
   # Completing the subcommand itself.
   if [ "$COMP_CWORD" -eq 1 ]; then
-    COMPREPLY=( $(compgen -W "$subcommands" -- "$cur") )
+    COMPREPLY=( $(compgen -W "--version -v --help -h $subcommands" -- "$cur") )
     return 0
   fi
 

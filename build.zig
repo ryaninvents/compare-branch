@@ -1,5 +1,18 @@
 const std = @import("std");
 
+// The single source of truth for the version `cb --version` reports. Typed so
+// the ZON import satisfies Zig 0.14's "known result type" requirement; `paths`
+// is a slice (not a fixed-length tuple) so this type doesn't need updating
+// every time an entry is added to build.zig.zon's `.paths`.
+const zon: struct {
+    name: @Type(.enum_literal),
+    version: []const u8,
+    fingerprint: u64,
+    minimum_zig_version: []const u8,
+    dependencies: struct {},
+    paths: []const []const u8,
+} = @import("build.zig.zon");
+
 // The release pipeline cross-compiles these four targets from a single
 // pinned-Zig Docker image; keep this list in sync with scripts/release.sh.
 const release_targets = [_]std.Target.Query{
@@ -10,17 +23,22 @@ const release_targets = [_]std.Target.Query{
 };
 
 // The shell wrapper files under shell/ live outside the src/ module root, so
-// they are exposed to `@embedFile` by name rather than by relative path. Every
-// compile of main.zig (default exe, release targets, unit tests) must register
-// them or the build fails to resolve the embed.
-fn embedShellAssets(b: *std.Build, module: *std.Build.Module) void {
+// they are exposed to `@embedFile` by name rather than by relative path, and
+// the version is exposed as a build option — every compile of main.zig
+// (default exe, release targets, unit tests) must register both or the build
+// fails to resolve the embed / the `build_options` import.
+fn configureModule(b: *std.Build, module: *std.Build.Module, options: *std.Build.Step.Options) void {
     module.addAnonymousImport("cb_zsh", .{ .root_source_file = b.path("shell/cb.zsh") });
     module.addAnonymousImport("cb_bash", .{ .root_source_file = b.path("shell/cb.bash") });
+    module.addOptions("build_options", options);
 }
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+
+    const options = b.addOptions();
+    options.addOption([]const u8, "version", zon.version);
 
     const exe = b.addExecutable(.{
         .name = "cb-bin",
@@ -28,7 +46,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    embedShellAssets(b, exe.root_module);
+    configureModule(b, exe.root_module, options);
     b.installArtifact(exe);
 
     const run_cmd = b.addRunArtifact(exe);
@@ -47,7 +65,7 @@ pub fn build(b: *std.Build) void {
             .target = resolved,
             .optimize = .ReleaseSafe,
         });
-        embedShellAssets(b, rel_exe.root_module);
+        configureModule(b, rel_exe.root_module, options);
         const triple = query.zigTriple(b.allocator) catch @panic("OOM");
         const install = b.addInstallArtifact(rel_exe, .{
             .dest_dir = .{ .override = .{ .custom = b.fmt("release/{s}", .{triple}) } },
@@ -68,7 +86,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    embedShellAssets(b, unit_tests.root_module);
+    configureModule(b, unit_tests.root_module, options);
     const run_unit_tests = b.addRunArtifact(unit_tests);
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_unit_tests.step);

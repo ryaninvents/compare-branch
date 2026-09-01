@@ -42,6 +42,8 @@ _cb() {
   )
 
   _arguments -C \
+    '(-)'{-v,--version}'[print the version]' \
+    '(-)'{-h,--help}'[show usage]' \
     '1: :->command' \
     '*:: :->args'
 

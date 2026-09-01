@@ -32,6 +32,11 @@ ORIGIN="$TMP/origin"; mkdir -p "$ORIGIN"
   printf 'hello world\n' > a.txt; printf 'new\n' > c.txt; git add -A; git commit -qm feat
   git checkout -q main )
 
+echo "[0] --version / -v report the build.zig.zon version"
+zon_version="$(sed -n 's/^ *\.version = "\(.*\)",$/\1/p' "$ROOT/build.zig.zon" | head -1)"
+assert_eq "$("$BIN" --version)" "cb $zon_version" "--version"
+assert_eq "$("$BIN" -v)" "cb $zon_version" "-v"
+
 echo "[1] mkproject clones the remote"
 out="$("$BIN" mkproject myproj "$TMP/proj" --remote "$ORIGIN")"
 assert_contains "$out" "created project 'myproj'" "mkproject output"
