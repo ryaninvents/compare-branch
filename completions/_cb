@@ -36,6 +36,7 @@ _cb() {
     'init:print shell integration (zsh|bash)'
     'config:show config path or value'
     'whereami:show project/worktree info for the current directory'
+    'doctor:reconcile state against git worktree list and disk'
     'exit:leave a review shell'
     'done:leave a review shell and delete the worktree'
   )
@@ -50,12 +51,13 @@ _cb() {
       ;;
     args)
       case "$line[1]" in
-        cd|ls|rm|rmproject|mk|review|review-local|refresh|review-shell)
+        cd|ls|rm|rmproject|mk|review|review-local|refresh|review-shell|doctor)
           # First arg after these subcommands is a project key.
           if (( CURRENT == 2 )); then
             case "$line[1]" in
               cd|rm|review-shell) _values 'option' '-i[interactive fzf picker]' ;;
               ls) _values 'option' '--json[emit JSON]' '--no-status[skip the status column]' ;;
+              doctor) _values 'option' '--fix[reconcile detected issues]' ;;
             esac
             _cb_projects
           elif (( CURRENT == 3 )); then

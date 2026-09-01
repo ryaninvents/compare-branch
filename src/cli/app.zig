@@ -9,6 +9,7 @@ const shell = @import("commands/shell.zig");
 const config_cmd = @import("commands/config_cmd.zig");
 const complete_cmd = @import("commands/complete.zig");
 const context_cmd = @import("commands/context.zig");
+const doctor_cmd = @import("commands/doctor.zig");
 
 // Wiring point: holds the resolved dependencies every command needs and routes
 // argv[1] to a handler. Composition (constructing Config/Git/paths) happens in
@@ -47,6 +48,7 @@ pub const usage =
     \\  cb refresh [<key> <worktree-key>]
     \\  cb review-shell [<key> <worktree-key>] [-i]
     \\  cb whereami
+    \\  cb doctor [<key>] [--fix]
     \\  cb init <zsh|bash>
     \\  cb config [path]
     \\
@@ -81,6 +83,7 @@ fn dispatch(ctx: *Context, cmd: []const u8, rest: []const []const u8) !void {
     if (eq(cmd, "review-done")) return review.reviewDone(ctx, rest);
     if (eq(cmd, "review-confirm-exit")) return review.confirmExit(ctx, rest);
     if (eq(cmd, "whereami")) return context_cmd.whereami(ctx, rest);
+    if (eq(cmd, "doctor")) return doctor_cmd.doctor(ctx, rest);
     if (eq(cmd, "init")) return shell.init(ctx, rest);
     if (eq(cmd, "__complete")) return complete_cmd.complete(ctx, rest);
     if (eq(cmd, "config")) return config_cmd.config(ctx, rest);

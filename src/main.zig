@@ -44,4 +44,5 @@ test {
     _ = @import("cli/args.zig");
     _ = @import("state/store.zig");
     _ = @import("state/locate.zig");
+    _ = @import("state/doctor.zig");
 }

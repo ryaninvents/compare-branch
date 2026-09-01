@@ -65,6 +65,7 @@ cb review-shell [<key> <worktree-key>] [-i]
 cb refresh [<key> <worktree-key>]   # no args inside a review shell, or inferred from $PWD
 
 cb whereami
+cb doctor [<key>] [--fix]
 cb init <zsh|bash>
 cb config [path]
 ```
@@ -97,6 +98,13 @@ cb config [path]
   listing. Bare `cb ls` shows each project's worktree count. `--json` emits
   the full records (including `dir`, `kind`, `base`, and timestamps) for
   scripting.
+- **`doctor`** cross-references the state log against `git worktree list` and
+  the filesystem (the log is the only source of truth, so it can drift — a
+  manual `git worktree remove`, a deleted directory, a worktree created
+  outside `cb`) and reports **ghost** worktrees (recorded but gone) and
+  **orphan** worktrees (real, but unrecorded). Read-only by default; `--fix`
+  appends the corrective events — a removal for each ghost, an adoption for
+  each orphan — never rewriting history.
 
 ## Interactive & context-aware
 

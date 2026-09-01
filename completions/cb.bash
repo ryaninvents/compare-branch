@@ -7,7 +7,7 @@ _cb() {
   cur="${COMP_WORDS[COMP_CWORD]}"
   local cmd="${COMP_WORDS[1]}"
 
-  local subcommands="mkproject mk cd ls rmproject rm review review-local refresh review-shell init config whereami exit done"
+  local subcommands="mkproject mk cd ls rmproject rm review review-local refresh review-shell init config whereami doctor exit done"
 
   # Completing the subcommand itself.
   if [ "$COMP_CWORD" -eq 1 ]; then
@@ -19,13 +19,14 @@ _cb() {
     init)
       COMPREPLY=( $(compgen -W "zsh bash" -- "$cur") )
       ;;
-    cd|ls|rm|rmproject|mk|review|review-local|refresh|review-shell)
+    cd|ls|rm|rmproject|mk|review|review-local|refresh|review-shell|doctor)
       if [ "$COMP_CWORD" -eq 2 ]; then
         local projects
         projects="$(command cb-bin __complete projects 2>/dev/null)"
         case "$cmd" in
           cd|rm|review-shell) projects="-i $projects" ;;
           ls) projects="--json --no-status $projects" ;;
+          doctor) projects="--fix $projects" ;;
         esac
         COMPREPLY=( $(compgen -W "$projects" -- "$cur") )
       elif [ "$COMP_CWORD" -eq 3 ]; then
