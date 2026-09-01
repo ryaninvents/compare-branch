@@ -74,4 +74,19 @@ echo "[6] doctor checks a standalone worktree for on-disk existence only"
 out="$("$BIN" doctor demo2)"
 assert_contains "$out" "no issues found" "doctor reports clean after standalone teardown"
 
+echo "[7] cb review --standalone severs alternates and survives the project checkout being gone"
+"$BIN" mkproject demo3 "$TMP/proj3" --remote "$ORIGIN" > /dev/null
+( cd "$ORIGIN" && git checkout -q -b feature && printf 'hello world\n' > a.txt && git commit -qam feat && git checkout -q main )
+"$BIN" review demo3 feature --standalone > /dev/null
+RWT="$("$BIN" cd-path demo3 feature --no-fetch)"
+RGD="$TMP/reviews/demo3--feature.git"
+[ -e "$RGD/objects/info/alternates" ] && fail "standalone review must sever objects/info/alternates"
+review_status_before="$(cd "$RWT" && GIT_DIR="$RGD" GIT_WORK_TREE="$RWT" git -c user.email=t@t.t -c user.name=t status --porcelain)"
+assert_contains "$review_status_before" "a.txt" "review shell shows the diff before the project checkout is removed"
+rm -rf "$TMP/proj3"
+plain_log="$(cd "$RWT" && git log --oneline -1 --format=%s)"
+assert_eq "$plain_log" "feat" "plain git history still resolves after the project checkout is gone"
+review_status_after="$(cd "$RWT" && GIT_DIR="$RGD" GIT_WORK_TREE="$RWT" git -c user.email=t@t.t -c user.name=t status --porcelain)"
+assert_eq "$review_status_after" "$review_status_before" "review shell status is unaffected by the project checkout being gone"
+
 echo "ALL E2E PASSED ($PASS assertions)"

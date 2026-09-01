@@ -24,7 +24,7 @@ pub fn mk(ctx: *app.Context, rest: []const []const u8) !void {
 
     const ticket = a.value(&.{ "t", "ticket" });
     const note = a.value(&.{ "n", "note" });
-    const standalone = resolveStandalone(ctx, &a, proj_key);
+    const standalone = common.resolveStandalone(ctx, &a, proj_key);
 
     if (!a.flag(&.{"no-fetch"})) fetch(ctx, project.dir);
 
@@ -81,14 +81,6 @@ pub fn mk(ctx: *app.Context, rest: []const []const u8) !void {
     ctx.print("created worktree '{s}' on {s}\n{s}\n", .{ wt_key, branch, dir });
 }
 
-/// Explicit `--standalone`/`--no-standalone` always wins over config, in
-/// either direction; falls back to `worktrees.standalone`
-/// (`cb-config(5)`), default `false`.
-fn resolveStandalone(ctx: *app.Context, a: *const args.Args, proj_key: []const u8) bool {
-    if (a.flag(&.{"no-standalone"})) return false;
-    if (a.flag(&.{"standalone"})) return true;
-    return ctx.config.worktreesStandalone(proj_key);
-}
 
 fn resolveBranchName(
     ctx: *app.Context,
@@ -141,23 +133,11 @@ fn addStandaloneWorktree(ctx: *app.Context, project: *const model.Project, branc
         return error.GitFailed;
     }
 
-    if (try projectOriginUrl(ctx, project)) |url| {
+    if (try common.projectOriginUrl(ctx, project)) |url| {
         defer ctx.gpa.free(url);
         var seturl_out = ctx.git.run(dir, &.{ "remote", "set-url", "origin", url }) catch return;
         seturl_out.deinit();
     }
-}
-
-/// The project's real remote URL, for pointing a standalone clone's `origin`
-/// at it instead of the project's local path (which is meaningless once the
-/// clone is moved or mounted elsewhere). Prefers the recorded project remote;
-/// falls back to querying the project checkout's own `origin` directly.
-fn projectOriginUrl(ctx: *app.Context, project: *const model.Project) !?[]u8 {
-    if (project.remote) |r| return try ctx.gpa.dupe(u8, r);
-    var out = ctx.git.run(project.dir, &.{ "remote", "get-url", "origin" }) catch return null;
-    defer out.deinit();
-    if (!out.ok()) return null;
-    return try ctx.gpa.dupe(u8, out.line());
 }
 
 pub fn rm(ctx: *app.Context, rest: []const []const u8) !void {

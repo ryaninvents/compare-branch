@@ -116,6 +116,15 @@ pub const RemoteOpts = struct {
     no_merge_base: bool,
     git_dir: []const u8,
     work_tree: []const u8,
+    /// Self-contained mode: the checkout becomes an independent `git clone`
+    /// instead of a linked worktree, and the review repo's borrowed objects
+    /// are repacked in and its `objects/info/alternates` dropped, so the
+    /// whole review directory can be mounted alone with nothing else present.
+    standalone: bool = false,
+    /// The project's real remote URL, used to point a standalone checkout's
+    /// `origin` at it instead of the project's local path. Ignored unless
+    /// `standalone` is set.
+    origin_url: ?[]const u8 = null,
 };
 
 pub fn setupRemote(ctx: *app.Context, o: RemoteOpts) !void {
@@ -138,10 +147,62 @@ pub fn setupRemote(ctx: *app.Context, o: RemoteOpts) !void {
         try ctx.git.capture(null, &.{ "--git-dir", o.git_dir, "merge-base", target_ref, mainline_ref });
     defer ctx.gpa.free(base_commit);
 
-    try addProjectWorktree(ctx, o.project_dir, o.branch, origin_target, o.work_tree);
+    if (o.standalone) {
+        try addStandaloneReviewCheckout(ctx, o.project_dir, o.branch, origin_target, o.work_tree, o.origin_url);
+    } else {
+        try addProjectWorktree(ctx, o.project_dir, o.branch, origin_target, o.work_tree);
+    }
 
     const g = isolated(ctx, o.git_dir, o.work_tree);
     try seedBaseline(ctx, g, o.git_dir, base_commit);
+
+    if (o.standalone) try severAlternates(ctx, o.git_dir);
+}
+
+/// Check out the target branch as an independent `git clone --local` (hard-
+/// linked objects: near-instant, near-zero extra disk on the same
+/// filesystem) rather than a linked worktree, so the checkout itself never
+/// depends on the project repo's object store.
+fn addStandaloneReviewCheckout(ctx: *app.Context, project_dir: []const u8, branch: []const u8, origin_ref: []const u8, dir: []const u8, origin_url: ?[]const u8) !void {
+    const target_sha = try ctx.git.capture(project_dir, &.{ "rev-parse", origin_ref });
+    defer ctx.gpa.free(target_sha);
+
+    var clone_out = try ctx.git.run(null, &.{ "clone", "--local", "--no-checkout", project_dir, dir });
+    defer clone_out.deinit();
+    if (!clone_out.ok()) {
+        ctx.warn("{s}", .{clone_out.stderr});
+        return error.GitFailed;
+    }
+
+    var checkout_out = try ctx.git.run(dir, &.{ "checkout", "-b", branch, target_sha });
+    defer checkout_out.deinit();
+    if (!checkout_out.ok()) {
+        ctx.warn("{s}", .{checkout_out.stderr});
+        return error.GitFailed;
+    }
+
+    if (origin_url) |url| {
+        var seturl_out = ctx.git.run(dir, &.{ "remote", "set-url", "origin", url }) catch return;
+        seturl_out.deinit();
+    }
+}
+
+/// Pack the review repo's objects (reachable through the alternates link) in
+/// locally, then drop the alternates file, so the review repo no longer
+/// depends on the project repo's object database. `git repack -a -d` must run
+/// before the alternates file is removed, or it can't resolve the borrowed
+/// objects it's packing in.
+fn severAlternates(ctx: *app.Context, git_dir: []const u8) !void {
+    var out = try ctx.git.run(null, &.{ "--git-dir", git_dir, "repack", "-a", "-d" });
+    defer out.deinit();
+    if (!out.ok()) {
+        ctx.warn("{s}", .{out.stderr});
+        return error.GitFailed;
+    }
+
+    const alt_path = try std.fs.path.join(ctx.gpa, &.{ git_dir, "objects", "info", "alternates" });
+    defer ctx.gpa.free(alt_path);
+    std.fs.cwd().deleteFile(alt_path) catch {};
 }
 
 /// Check out the target branch as a real linked `git worktree` of the project

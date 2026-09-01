@@ -142,6 +142,35 @@ side.
 skips all of this and only updates the working tree, exactly as
 .Nm cb
 did before 0.6.0.
+.Sh STANDALONE REVIEWS
+By default the checkout is a linked
+.Xr git-worktree 1
+and the review repo depends on the project's object database via
+.Pa objects/info/alternates
+\(em fast to set up, but neither half can be moved or mounted
+anywhere alone.
+.Ic cb review Fl Fl standalone
+instead checks the target out as an independent
+.Ic git clone --local
+.Pq hardlinked objects: near-instant, near-zero extra disk on the same
+filesystem ,
+with
+.Ic origin
+pointed at the project's real remote, and repacks the review repo's
+borrowed objects in before dropping its
+.Pa objects/info/alternates .
+The result: both the working tree and the review repo are
+self-contained, so the whole review directory can be mounted alone
+into e.g. a container volume, review shell included, with nothing
+else present.
+.Fl Fl standalone
+and
+.Fl Fl no-standalone
+override
+.Ic worktrees.standalone
+.Pq Xr cb-config 5
+in either direction, the same as
+.Cm mk .
 .Sh REVIEWING A PULL REQUEST
 .Ic cb review Ar key Ar N
 or

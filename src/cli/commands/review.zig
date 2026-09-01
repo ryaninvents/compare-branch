@@ -15,7 +15,7 @@ const gh = @import("../../github/gh.zig");
 // `review-confirm-exit` back the in-shell `cb done`/`cb exit`.
 
 pub fn review(ctx: *app.Context, rest: []const []const u8) !void {
-    var a = try args.parse(ctx.gpa, rest, &.{ "no-merge-base", "shell" });
+    var a = try args.parse(ctx.gpa, rest, &.{ "no-merge-base", "shell", "standalone", "no-standalone" });
     defer a.deinit();
 
     const proj_key = a.pos(0) orelse return error.MissingArgument;
@@ -63,6 +63,10 @@ pub fn review(ctx: *app.Context, rest: []const []const u8) !void {
     const git_dir = try engine.reviewDir(ctx, proj_key, key);
     defer ctx.gpa.free(git_dir);
 
+    const standalone = common.resolveStandalone(ctx, &a, proj_key);
+    const origin_url = if (standalone) try common.projectOriginUrl(ctx, project) else null;
+    defer if (origin_url) |u| ctx.gpa.free(u);
+
     try engine.setupRemote(ctx, .{
         .project_dir = project.dir,
         .branch = branch,
@@ -71,6 +75,8 @@ pub fn review(ctx: *app.Context, rest: []const []const u8) !void {
         .no_merge_base = a.flag(&.{"no-merge-base"}),
         .git_dir = git_dir,
         .work_tree = raw_work_tree,
+        .standalone = standalone,
+        .origin_url = origin_url,
     });
 
     // Canonicalize now that the worktree exists, so this dir compares
@@ -95,6 +101,7 @@ pub fn review(ctx: *app.Context, rest: []const []const u8) !void {
         .prTitle = if (pr_info) |p| p.title else null,
         .prAuthor = if (pr_info) |p| p.author else null,
         .prUrl = if (pr_info) |p| p.url else null,
+        .standalone = if (standalone) true else null,
     });
     ctx.print("review ready: {s}\n", .{work_tree});
     if (pr_info) |p| {
@@ -276,14 +283,19 @@ pub fn reviewDone(ctx: *app.Context, rest: []const []const u8) !void {
         if (!ok) return error.Aborted;
     }
 
-    // Remote reviews own their worktree dir (a real linked `git worktree` of
-    // the project repo) and can be deleted; local reviews point at the user's
-    // own directory, which we must never remove.
+    // Remote reviews own their worktree dir (a real linked `git worktree`, or
+    // for a --standalone review an independent clone, of the project repo)
+    // and can be deleted; local reviews point at the user's own directory,
+    // which we must never remove.
     if (wt.kind == .review) {
-        var out = try ctx.git.run(project.dir, &.{ "worktree", "remove", "--force", wt.dir });
-        defer out.deinit();
-        if (!out.ok()) ctx.warn("warning: git worktree remove failed: {s}", .{out.stderr});
-        std.fs.cwd().deleteTree(wt.dir) catch {};
+        if (wt.standalone) {
+            std.fs.cwd().deleteTree(wt.dir) catch {};
+        } else {
+            var out = try ctx.git.run(project.dir, &.{ "worktree", "remove", "--force", wt.dir });
+            defer out.deinit();
+            if (!out.ok()) ctx.warn("warning: git worktree remove failed: {s}", .{out.stderr});
+            std.fs.cwd().deleteTree(wt.dir) catch {};
+        }
     }
     const git_dir = try engine.reviewDir(ctx, proj_key, wt_key);
     defer ctx.gpa.free(git_dir);

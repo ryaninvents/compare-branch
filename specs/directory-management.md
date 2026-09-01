@@ -163,7 +163,7 @@ disk.
 # Reviews
 
 ```bash
-cb review <project-key> <remote-branch-name | PR-number | PR-URL> [-t|--ticket <ticket_id>] [-n|--note <note>] [--base <branch>] [--shell]
+cb review <project-key> <remote-branch-name | PR-number | PR-URL> [-t|--ticket <ticket_id>] [-n|--note <note>] [--base <branch>] [--shell] [--standalone|--no-standalone]
 ```
 
 Creates a "review worktree": a real `git worktree` of the project repo, checked out at the target branch, so plain `git`/`gh` (log, status, remotes, `gh pr view --web`) work in it like any other worktree. Alongside it, `cb` creates a second, isolated git directory — the *review repo* — that shares the project's object database but keeps its own `HEAD`/index/refs. See <https://github.com/ryaninvents/rapid-review> for a Bash implementation of the review workflow. We're not copying rapid-review, but we're using the same `--git-dir` mechanism, layered on top of the real worktree, to allow the user to review code incrementally: `cb review-shell` points `GIT_DIR`/`GIT_WORK_TREE` at the review repo so `git status` there shows only what's left to review; a plain `cd` into the same directory sees the real branch history instead. See <cb-review(7)> for the mechanism in full.
@@ -173,6 +173,19 @@ We always use `git merge-base` when comparing, so that we don't end up having to
 We always store the metadata attached to the given review.
 
 When `--shell` is passed, we immediately open the review shell (described below)
+
+By default the checkout is a linked `git worktree` and the review repo depends on the
+project's object database via `objects/info/alternates` — fast to set up, but neither
+half can be moved or mounted anywhere alone. `--standalone` instead checks the target
+out as an independent `git clone --local` (hardlinked objects, near-instant, near-zero
+extra disk on the same filesystem) with `origin` pointed at the project's real remote,
+and repacks the review repo's borrowed objects in before dropping its
+`objects/info/alternates`. The result: both halves are self-contained, so the whole
+review directory — worktree and review repo alike, review shell included — can be
+mounted alone with nothing else present. `--standalone`/`--no-standalone` override
+`worktrees.standalone` the same way they do for `cb mk` (see above): an explicit flag
+always wins over config in either direction, `--no-standalone` wins if both are somehow
+given, and with neither the project's `worktrees.standalone` config value decides.
 
 ## Reviewing a pull request
 

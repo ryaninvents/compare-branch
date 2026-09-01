@@ -52,6 +52,7 @@
 .Op Fl Fl base Ar branch
 .Op Fl Fl no-merge-base
 .Op Fl Fl shell
+.Op Fl Fl standalone | Fl Fl no-standalone
 .Nm
 .Cm review-local
 .Ar key dir
@@ -322,6 +323,25 @@ immediately opens a review shell in the new worktree, equivalent to a
 following
 .Cm review-shell
 call.
+.Fl Fl standalone
+checks the target out as an independent
+.Ic git clone --local
+instead of a linked
+.Xr git-worktree 1 ,
+and repacks the review repo's borrowed objects in and drops its
+.Pa objects/info/alternates ,
+so the whole review directory \(em worktree and review repo alike \(em
+is self-contained enough to be mounted alone with nothing else
+present.
+.Fl Fl standalone
+and
+.Fl Fl no-standalone
+override
+.Ic worktrees.standalone
+.Pq Xr cb-config 5
+the same way they do for
+.Cm mk ;
+see there for the precedence rules and trade-offs.
 .Ss review-local Ar key dir
 Like
 .Cm review ,
